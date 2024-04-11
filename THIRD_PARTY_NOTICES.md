@@ -92,7 +92,7 @@ code, the source code can be found at [https://github.com/newrelic/node-newrelic
 
 ### @grpc/grpc-js
 
-This product includes source derived from [@grpc/grpc-js](https://github.com/grpc/grpc-node/tree/master/packages/grpc-js) ([v1.9.4](https://github.com/grpc/grpc-node/tree/master/packages/grpc-js/tree/v1.9.4)), distributed under the [Apache-2.0 License](https://github.com/grpc/grpc-node/tree/master/packages/grpc-js/blob/v1.9.4/LICENSE):
+This product includes source derived from [@grpc/grpc-js](https://github.com/grpc/grpc-node/tree/master/packages/grpc-js) ([v1.10.6](https://github.com/grpc/grpc-node/tree/master/packages/grpc-js/tree/v1.10.6)), distributed under the [Apache-2.0 License](https://github.com/grpc/grpc-node/tree/master/packages/grpc-js/blob/v1.10.6/LICENSE):
 
 ```
                                  Apache License
@@ -301,7 +301,7 @@ This product includes source derived from [@grpc/grpc-js](https://github.com/grp
 
 ### @grpc/proto-loader
 
-This product includes source derived from [@grpc/proto-loader](https://github.com/grpc/grpc-node) ([v0.7.9](https://github.com/grpc/grpc-node/tree/v0.7.9)), distributed under the [Apache-2.0 License](https://github.com/grpc/grpc-node/blob/v0.7.9/LICENSE):
+This product includes source derived from [@grpc/proto-loader](https://github.com/grpc/grpc-node) ([v0.7.12](https://github.com/grpc/grpc-node/tree/v0.7.12)), distributed under the [Apache-2.0 License](https://github.com/grpc/grpc-node/blob/v0.7.12/LICENSE):
 
 ```
                                  Apache License
@@ -510,7 +510,7 @@ This product includes source derived from [@grpc/proto-loader](https://github.co
 
 ### @newrelic/aws-sdk
 
-This product includes source derived from [@newrelic/aws-sdk](https://github.com/newrelic/node-newrelic-aws-sdk) ([v7.0.2](https://github.com/newrelic/node-newrelic-aws-sdk/tree/v7.0.2)), distributed under the [Apache-2.0 License](https://github.com/newrelic/node-newrelic-aws-sdk/blob/v7.0.2/LICENSE):
+This product includes source derived from [@newrelic/aws-sdk](https://github.com/newrelic/node-newrelic-aws-sdk) ([v7.4.1](https://github.com/newrelic/node-newrelic-aws-sdk/tree/v7.4.1)), distributed under the [Apache-2.0 License](https://github.com/newrelic/node-newrelic-aws-sdk/blob/v7.4.1/LICENSE):
 
 ```
                                  Apache License
@@ -1242,23 +1242,36 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ### https-proxy-agent
 
-This product includes source derived from [https-proxy-agent](https://github.com/TooTallNate/proxy-agents) ([v7.0.2](https://github.com/TooTallNate/proxy-agents/tree/v7.0.2)), distributed under the [MIT License](https://github.com/TooTallNate/proxy-agents/blob/v7.0.2/README.md):
+This product includes source derived from [https-proxy-agent](https://github.com/TooTallNate/proxy-agents) ([v7.0.4](https://github.com/TooTallNate/proxy-agents/tree/v7.0.4)), distributed under the [MIT License](https://github.com/TooTallNate/proxy-agents/blob/v7.0.4/LICENSE):
 
 ```
-MIT License
+(The MIT License)
 
-Copyright (c) <year> <copyright holders>
+Copyright (c) 2013 Nathan Rajlich <nathan@tootallnate.net>
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+'Software'), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
 
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
 ### import-in-the-middle
 
-This product includes source derived from [import-in-the-middle](https://github.com/DataDog/import-in-the-middle) ([v1.4.2](https://github.com/DataDog/import-in-the-middle/tree/v1.4.2)), distributed under the [Apache-2.0 License](https://github.com/DataDog/import-in-the-middle/blob/v1.4.2/LICENSE):
+This product includes source derived from [import-in-the-middle](https://github.com/DataDog/import-in-the-middle) ([v1.7.3](https://github.com/DataDog/import-in-the-middle/tree/v1.7.3)), distributed under the [Apache-2.0 License](https://github.com/DataDog/import-in-the-middle/blob/v1.7.3/LICENSE):
 
 ```
 Copyright 2021 Datadog, Inc.
@@ -1414,7 +1427,7 @@ IN THE SOFTWARE.
 
 ### require-in-the-middle
 
-This product includes source derived from [require-in-the-middle](https://github.com/elastic/require-in-the-middle) ([v7.2.0](https://github.com/elastic/require-in-the-middle/tree/v7.2.0)), distributed under the [MIT License](https://github.com/elastic/require-in-the-middle/blob/v7.2.0/LICENSE):
+This product includes source derived from [require-in-the-middle](https://github.com/elastic/require-in-the-middle) ([v7.3.0](https://github.com/elastic/require-in-the-middle/tree/v7.3.0)), distributed under the [MIT License](https://github.com/elastic/require-in-the-middle/blob/v7.3.0/LICENSE):
 
 ```
 The MIT License (MIT)
@@ -1444,7 +1457,7 @@ SOFTWARE.
 
 ### semver
 
-This product includes source derived from [semver](https://github.com/npm/node-semver) ([v7.5.4](https://github.com/npm/node-semver/tree/v7.5.4)), distributed under the [ISC License](https://github.com/npm/node-semver/blob/v7.5.4/LICENSE):
+This product includes source derived from [semver](https://github.com/npm/node-semver) ([v7.6.0](https://github.com/npm/node-semver/tree/v7.6.0)), distributed under the [ISC License](https://github.com/npm/node-semver/blob/v7.6.0/LICENSE):
 
 ```
 The ISC License
@@ -1467,7 +1480,7 @@ IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 ### winston-transport
 
-This product includes source derived from [winston-transport](https://github.com/winstonjs/winston-transport) ([v4.5.0](https://github.com/winstonjs/winston-transport/tree/v4.5.0)), distributed under the [MIT License](https://github.com/winstonjs/winston-transport/blob/v4.5.0/LICENSE):
+This product includes source derived from [winston-transport](https://github.com/winstonjs/winston-transport) ([v4.7.0](https://github.com/winstonjs/winston-transport/tree/v4.7.0)), distributed under the [MIT License](https://github.com/winstonjs/winston-transport/blob/v4.7.0/LICENSE):
 
 ```
 The MIT License (MIT)
@@ -1917,7 +1930,7 @@ This product includes source derived from [@newrelic/newrelic-oss-cli](https://g
 
 ### @newrelic/test-utilities
 
-This product includes source derived from [@newrelic/test-utilities](https://github.com/newrelic/node-test-utilities) ([v8.1.0](https://github.com/newrelic/node-test-utilities/tree/v8.1.0)), distributed under the [Apache-2.0 License](https://github.com/newrelic/node-test-utilities/blob/v8.1.0/LICENSE):
+This product includes source derived from [@newrelic/test-utilities](https://github.com/newrelic/node-test-utilities) ([v8.4.0](https://github.com/newrelic/node-test-utilities/tree/v8.4.0)), distributed under the [Apache-2.0 License](https://github.com/newrelic/node-test-utilities/blob/v8.4.0/LICENSE):
 
 ```
                                  Apache License
@@ -2156,7 +2169,7 @@ THE SOFTWARE.
 
 ### @slack/bolt
 
-This product includes source derived from [@slack/bolt](https://github.com/slackapi/bolt) ([v3.13.3](https://github.com/slackapi/bolt/tree/v3.13.3)), distributed under the [MIT License](https://github.com/slackapi/bolt/blob/v3.13.3/LICENSE):
+This product includes source derived from [@slack/bolt](https://github.com/slackapi/bolt) ([v3.17.1](https://github.com/slackapi/bolt/tree/v3.17.1)), distributed under the [MIT License](https://github.com/slackapi/bolt/blob/v3.17.1/LICENSE):
 
 ```
 The MIT License (MIT)
@@ -2216,7 +2229,7 @@ SOFTWARE.
 
 ### async
 
-This product includes source derived from [async](https://github.com/caolan/async) ([v3.2.4](https://github.com/caolan/async/tree/v3.2.4)), distributed under the [MIT License](https://github.com/caolan/async/blob/v3.2.4/LICENSE):
+This product includes source derived from [async](https://github.com/caolan/async) ([v3.2.5](https://github.com/caolan/async/tree/v3.2.5)), distributed under the [MIT License](https://github.com/caolan/async/blob/v3.2.5/LICENSE):
 
 ```
 Copyright (c) 2010-2018 Caolan McMahon
@@ -2265,7 +2278,7 @@ ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 ### chai
 
-This product includes source derived from [chai](https://github.com/chaijs/chai) ([v4.3.8](https://github.com/chaijs/chai/tree/v4.3.8)), distributed under the [MIT License](https://github.com/chaijs/chai/blob/v4.3.8/LICENSE):
+This product includes source derived from [chai](https://github.com/chaijs/chai) ([v4.4.1](https://github.com/chaijs/chai/tree/v4.4.1)), distributed under the [MIT License](https://github.com/chaijs/chai/blob/v4.4.1/LICENSE):
 
 ```
 MIT License
@@ -2294,7 +2307,7 @@ SOFTWARE.
 
 ### clean-jsdoc-theme
 
-This product includes source derived from [clean-jsdoc-theme](https://github.com/ankitskvmdam/clean-jsdoc-theme) ([v4.2.10](https://github.com/ankitskvmdam/clean-jsdoc-theme/tree/v4.2.10)), distributed under the [MIT License](https://github.com/ankitskvmdam/clean-jsdoc-theme/blob/v4.2.10/LICENSE):
+This product includes source derived from [clean-jsdoc-theme](https://github.com/ankitskvmdam/clean-jsdoc-theme) ([v4.2.18](https://github.com/ankitskvmdam/clean-jsdoc-theme/tree/v4.2.18)), distributed under the [MIT License](https://github.com/ankitskvmdam/clean-jsdoc-theme/blob/v4.2.18/LICENSE):
 
 ```
 MIT License
@@ -2773,7 +2786,7 @@ Library.
 
 ### eslint
 
-This product includes source derived from [eslint](https://github.com/eslint/eslint) ([v8.48.0](https://github.com/eslint/eslint/tree/v8.48.0)), distributed under the [MIT License](https://github.com/eslint/eslint/blob/v8.48.0/LICENSE):
+This product includes source derived from [eslint](https://github.com/eslint/eslint) ([v8.57.0](https://github.com/eslint/eslint/tree/v8.57.0)), distributed under the [MIT License](https://github.com/eslint/eslint/blob/v8.57.0/LICENSE):
 
 ```
 Copyright OpenJS Foundation and other contributors, <www.openjsf.org>
@@ -2800,7 +2813,7 @@ THE SOFTWARE.
 
 ### express
 
-This product includes source derived from [express](https://github.com/expressjs/express) ([v4.18.2](https://github.com/expressjs/express/tree/v4.18.2)), distributed under the [MIT License](https://github.com/expressjs/express/blob/v4.18.2/LICENSE):
+This product includes source derived from [express](https://github.com/expressjs/express) ([v4.19.2](https://github.com/expressjs/express/tree/v4.19.2)), distributed under the [MIT License](https://github.com/expressjs/express/blob/v4.19.2/LICENSE):
 
 ```
 (The MIT License)
@@ -3075,7 +3088,7 @@ SOFTWARE.
 
 ### lockfile-lint
 
-This product includes source derived from [lockfile-lint](https://github.com/lirantal/lockfile-lint) ([v4.12.1](https://github.com/lirantal/lockfile-lint/tree/v4.12.1)), distributed under the [Apache-2.0 License](https://github.com/lirantal/lockfile-lint/blob/v4.12.1/LICENSE):
+This product includes source derived from [lockfile-lint](https://github.com/lirantal/lockfile-lint) ([v4.13.2](https://github.com/lirantal/lockfile-lint/tree/v4.13.2)), distributed under the [Apache-2.0 License](https://github.com/lirantal/lockfile-lint/blob/v4.13.2/LICENSE):
 
 ```
 
@@ -9465,7 +9478,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### tap
 
-This product includes source derived from [tap](https://github.com/tapjs/node-tap) ([v16.3.8](https://github.com/tapjs/node-tap/tree/v16.3.8)), distributed under the [ISC License](https://github.com/tapjs/node-tap/blob/v16.3.8/LICENSE):
+This product includes source derived from [tap](https://github.com/tapjs/node-tap) ([v16.3.10](https://github.com/tapjs/node-tap/tree/v16.3.10)), distributed under the [ISC License](https://github.com/tapjs/node-tap/blob/v16.3.10/LICENSE):
 
 ```
 The ISC License
@@ -9576,7 +9589,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ### @newrelic/native-metrics
 
-This product includes source derived from [@newrelic/native-metrics](https://github.com/newrelic/node-native-metrics) ([v10.0.0](https://github.com/newrelic/node-native-metrics/tree/v10.0.0)), distributed under the [Apache-2.0 License](https://github.com/newrelic/node-native-metrics/blob/v10.0.0/LICENSE):
+This product includes source derived from [@newrelic/native-metrics](https://github.com/newrelic/node-native-metrics) ([v10.1.1](https://github.com/newrelic/node-native-metrics/tree/v10.1.1)), distributed under the [Apache-2.0 License](https://github.com/newrelic/node-native-metrics/blob/v10.1.1/LICENSE):
 
 ```
                                  Apache License
