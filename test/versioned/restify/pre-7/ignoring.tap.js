@@ -44,6 +44,7 @@ test('Restify router introspection', function (t) {
         ? 14
         : 15
       : 7
+    console.log('here i am: restify', expectedMetrics, Object.keys(metrics).length)
     t.equal(
       Object.keys(metrics).length,
       expectedMetrics,
