@@ -41,8 +41,8 @@ test('Restify router introspection', function (t) {
     // k2 child_process instrumentation, fun fun fun
     const expectedMetrics = helper.isSecurityAgentEnabled(agent)
       ? semver.lt(pkgVersion, 'v6.0.0')
-        ? 14
-        : 15
+        ? 15
+        : 16
       : 7
     console.log('here i am: restify', expectedMetrics, Object.keys(metrics).length)
     t.equal(
