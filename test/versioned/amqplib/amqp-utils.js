@@ -52,18 +52,14 @@ function verifySubscribe(t, tx, exchange, routingKey) {
     ]
   }
 
-  t.doesNotThrow(function () {
-    metrics.assertSegments(tx.trace.root, segments)
-  }, 'should have expected segments')
+  t.assertSegments(tx.trace.root, segments)
 
-  t.doesNotThrow(function () {
-    metrics.assertMetrics(
-      tx.metrics,
-      [[{ name: 'MessageBroker/RabbitMQ/Exchange/Produce/Named/' + exchange }]],
-      false,
-      false
-    )
-  }, 'should have expected metrics')
+  t.assertMetrics(
+    tx.metrics,
+    [[{ name: 'MessageBroker/RabbitMQ/Exchange/Produce/Named/' + exchange }]],
+    false,
+    false
+  )
 
   t.notMatch(tx.getFullName(), /^OtherTransaction\/Message/, 'should not set transaction name')
 
@@ -112,7 +108,7 @@ function verifyDistributedTrace(t, produceTransaction, consumeTransaction) {
 
 function verifyConsumeTransaction(t, tx, exchange, queue, routingKey) {
   t.doesNotThrow(function () {
-    metrics.assertMetrics(
+    t.assertMetrics(
       tx.metrics,
       [
         [{ name: 'OtherTransaction/Message/RabbitMQ/Exchange/Named/' + exchange }],
@@ -137,6 +133,9 @@ function verifyConsumeTransaction(t, tx, exchange, queue, routingKey) {
     'OtherTransaction/Message/RabbitMQ/Exchange/Named/' + exchange
   )
   t.equal(consume, tx.baseSegment)
+  const segmentAttrs = consume.getAttributes()
+  t.equal(segmentAttrs.host, params.rabbitmq_host, 'should have host on segment')
+  t.equal(segmentAttrs.port, params.rabbitmq_port, 'should have port on segment')
 
   const attributes = tx.trace.attributes.get(DESTINATIONS.TRANS_TRACE)
   t.equal(
@@ -148,24 +147,22 @@ function verifyConsumeTransaction(t, tx, exchange, queue, routingKey) {
 }
 
 function verifySendToQueue(t, tx) {
-  t.doesNotThrow(function () {
-    metrics.assertSegments(tx.trace.root, ['MessageBroker/RabbitMQ/Exchange/Produce/Named/Default'])
-  }, 'should have expected segments')
+  t.assertSegments(tx.trace.root, ['MessageBroker/RabbitMQ/Exchange/Produce/Named/Default'])
 
-  t.doesNotThrow(function () {
-    metrics.assertMetrics(
-      tx.metrics,
-      [[{ name: 'MessageBroker/RabbitMQ/Exchange/Produce/Named/Default' }]],
-      false,
-      false
-    )
-  }, 'should have expected metrics')
+  t.assertMetrics(
+    tx.metrics,
+    [[{ name: 'MessageBroker/RabbitMQ/Exchange/Produce/Named/Default' }]],
+    false,
+    false
+  )
 
   const segment = metrics.findSegment(
     tx.trace.root,
     'MessageBroker/RabbitMQ/Exchange/Produce/Named/Default'
   )
   const attributes = segment.getAttributes()
+  t.equal(attributes.host, params.rabbitmq_host, 'should have host on segment')
+  t.equal(attributes.port, params.rabbitmq_port, 'should have port on segment')
   t.equal(attributes.routing_key, 'testQueue', 'should store routing key')
   t.equal(attributes.reply_to, 'my.reply.queue', 'should store reply to')
   t.equal(attributes.correlation_id, 'correlation-id', 'should store correlation id')
@@ -214,18 +211,14 @@ function verifyProduce(t, tx, exchangeName, routingKey) {
     ]
   }
 
-  t.doesNotThrow(() => {
-    metrics.assertSegments(tx.trace.root, segments, 'should have expected segments')
-  })
+  t.assertSegments(tx.trace.root, segments, 'should have expected segments')
 
-  t.doesNotThrow(function () {
-    metrics.assertMetrics(
-      tx.metrics,
-      [[{ name: 'MessageBroker/RabbitMQ/Exchange/Produce/Named/' + exchangeName }]],
-      false,
-      false
-    )
-  }, 'should have expected metrics')
+  t.assertMetrics(
+    tx.metrics,
+    [[{ name: 'MessageBroker/RabbitMQ/Exchange/Produce/Named/' + exchangeName }]],
+    false,
+    false
+  )
 
   const segment = metrics.findSegment(
     tx.trace.root,
@@ -237,31 +230,28 @@ function verifyProduce(t, tx, exchangeName, routingKey) {
   } else {
     t.notOk(attributes.routing_key, 'should not have routing key')
   }
+
+  t.equal(attributes.host, params.rabbitmq_host, 'should have host on segment')
+  t.equal(attributes.port, params.rabbitmq_port, 'should have port on segment')
 }
 
-function verifyGet(t, tx, exchangeName, routingKey, queue) {
+function verifyGet({ t, tx, exchangeName, routingKey, queue, assertAttr }) {
   const isCallback = !!metrics.findSegment(tx.trace.root, 'Callback: <anonymous>')
   const produceName = 'MessageBroker/RabbitMQ/Exchange/Produce/Named/' + exchangeName
   const consumeName = 'MessageBroker/RabbitMQ/Exchange/Consume/Named/' + queue
   if (isCallback) {
-    t.doesNotThrow(assertions, 'should have expected segments')
-
-    function assertions() {
-      metrics.assertSegments(tx.trace.root, [produceName, consumeName, ['Callback: <anonymous>']])
-    }
+    t.assertSegments(tx.trace.root, [produceName, consumeName, ['Callback: <anonymous>']])
   } else {
-    t.doesNotThrow(function () {
-      metrics.assertSegments(tx.trace.root, [produceName, consumeName])
-    }, 'should have expected segments')
+    t.assertSegments(tx.trace.root, [produceName, consumeName])
   }
-  t.doesNotThrow(function () {
-    metrics.assertMetrics(
-      tx.metrics,
-      [[{ name: produceName }], [{ name: consumeName }]],
-      false,
-      false
-    )
-  }, 'should have expected metrics')
+  t.assertMetrics(tx.metrics, [[{ name: produceName }], [{ name: consumeName }]], false, false)
+  if (assertAttr) {
+    const segment = metrics.findSegment(tx.trace.root, consumeName)
+    const attributes = segment.getAttributes()
+    t.equal(attributes.host, params.rabbitmq_host, 'should have host on segment')
+    t.equal(attributes.port, params.rabbitmq_port, 'should have port on segment')
+    t.equal(attributes.routing_key, routingKey, 'should have routing key on get')
+  }
 }
 
 function verifyPurge(t, tx) {
@@ -304,18 +294,9 @@ function verifyPurge(t, tx) {
     ]
   }
 
-  t.doesNotThrow(() => {
-    metrics.assertSegments(tx.trace.root, segments, 'should have expected segments')
-  })
+  t.assertSegments(tx.trace.root, segments, 'should have expected segments')
 
-  t.doesNotThrow(function () {
-    metrics.assertMetrics(
-      tx.metrics,
-      [[{ name: 'MessageBroker/RabbitMQ/Queue/Purge/Temp' }]],
-      false,
-      false
-    )
-  }, 'should have expected metrics')
+  t.assertMetrics(tx.metrics, [[{ name: 'MessageBroker/RabbitMQ/Queue/Purge/Temp' }]], false, false)
 }
 
 function verifyTransaction(t, tx, msg) {

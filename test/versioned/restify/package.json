@@ -1,0 +1,29 @@
+{
+  "name": "restify-tests",
+  "targets": [{"name":"restify","minAgentVersion":"2.6.0"}],
+  "version": "0.0.0",
+  "private": true,
+  "tests": [
+    {
+      "engines": {
+        "node": ">=18"
+      },
+      "dependencies": {
+        "restify": ">=11.0.0",
+        "express": "4.16",
+        "restify-errors": "6.1"
+      },
+      "files": [
+        "async-handlers.tap.js",
+        "capture-params.tap.js",
+        "ignoring.tap.js",
+        "restify.tap.js",
+        "rum.tap.js",
+        "router.tap.js",
+        "transaction-naming.tap.js",
+        "with-express.tap.js"
+      ]
+    }
+  ],
+  "dependencies": {}
+}

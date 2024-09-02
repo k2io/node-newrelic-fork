@@ -1,14 +1,15 @@
 {
   "name": "redis-tests",
+  "targets": [{"name":"redis","minAgentVersion":"1.31.0"}],
   "version": "0.0.0",
   "private": true,
   "tests": [
     {
       "engines": {
-        "node": ">=16"
+        "node": ">=18"
       },
       "dependencies": {
-        "redis": ">=2.0.0 < 2.3.0"
+        "redis": ">=3.1.0 < 4.0.0"
       },
       "files": [
         "redis.tap.js"
@@ -16,46 +17,15 @@
     },
     {
       "engines": {
-        "node": ">=16"
+        "node": ">=18"
       },
       "dependencies": {
-        "redis": ">=2.3.0 < 2.4.0"
+        "redis": ">=4.0.0"
       },
       "files": [
-        "redis.tap.js"
-      ]
-    },
-    {
-      "engines": {
-        "node": ">=16"
-      },
-      "dependencies": {
-        "redis": ">=2.4.0 < 2.6.0"
-      },
-      "files": [
-        "redis.tap.js"
-      ]
-    },
-    {
-      "engines": {
-        "node": ">=16"
-      },
-      "dependencies": {
-        "redis": ">=2.6.0 < 4"
-      },
-      "files": [
-        "redis.tap.js"
-      ]
-    },
-    {
-      "engines": {
-        "node": ">=16"
-      },
-      "dependencies": {
-        "redis": ">=4"
-      },
-      "files": [
-        "redis-v4.tap.js"
+        "redis-v4.tap.js",
+        "redis-v4-legacy-mode.tap.js",
+        "tls.tap.js"
       ]
     }
   ]

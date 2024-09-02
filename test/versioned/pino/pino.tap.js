@@ -10,62 +10,43 @@ const { sink, once } = require('pino/test/helper')
 const split = require('split2')
 const { truncate } = require('../../../lib/util/application-logging')
 const helper = require('../../lib/agent_helper')
+const { removeMatchedModules } = require('../../lib/cache-buster')
 const { LOGGING } = require('../../../lib/metrics/names')
 const { originalMsgAssertion } = require('./helpers')
 const semver = require('semver')
 const { version: pinoVersion } = require('pino/package')
-
-tap.Test.prototype.addAssert(
-  'validateNrLogLine',
-  2,
-  function validateNrLogLine({ line: logLine, message, level, config }) {
-    this.equal(
-      logLine['entity.name'],
-      config.applications()[0],
-      'should have entity name that matches app'
-    )
-    this.equal(logLine['entity.guid'], 'pino-guid', 'should have set entity guid')
-    this.equal(logLine['entity.type'], 'SERVICE', 'should have entity type of SERVICE')
-    this.equal(logLine.hostname, config.getHostnameSafe(), 'should have proper hostname')
-    this.match(logLine.timestamp, /[\d]{10}/, 'should have proper unix timestamp')
-    this.notOk(logLine.message.includes('NR-LINKING'), 'should not contain NR-LINKING metadata')
-    if (message) {
-      this.equal(logLine.message, message, 'message should be the same as log')
-    }
-
-    if (level) {
-      this.equal(logLine.level, level, 'level should be string value not number')
-    }
-  }
-)
+require('../../lib/logging-helper')
 
 tap.test('Pino instrumentation', (t) => {
   t.autoend()
-  let logger
-  let stream
-  let pino
-  let agent
 
-  function setupAgent(config) {
-    agent = helper.instrumentMockedAgent(config)
-    agent.config.entity_guid = 'pino-guid'
-    pino = require('pino')
-    stream = sink()
-    logger = pino({ level: 'debug' }, stream)
-    return agent.config
+  function setupAgent(context, config) {
+    context.agent = helper.instrumentMockedAgent(config)
+    context.agent.config.entity_guid = 'test-guid'
+    context.pino = require('pino')
+    context.stream = sink()
+    context.logger = context.pino({ level: 'debug' }, context.stream)
+    return context.agent.config
   }
 
-  t.afterEach(() => {
-    helper.unloadAgent(agent)
-    Object.keys(require.cache).forEach((key) => {
-      if (/pino/.test(key)) {
-        delete require.cache[key]
-      }
-    })
+  t.beforeEach(async (t) => {
+    removeMatchedModules(/pino/)
+
+    t.context.pino = null
+    t.context.agent = null
+    t.context.stream = null
+    t.context.logger = null
+  })
+
+  t.afterEach((t) => {
+    if (t.context.agent) {
+      helper.unloadAgent(t.context.agent)
+    }
   })
 
   t.test('logging disabled', async (t) => {
-    setupAgent({ application_logging: { enabled: false } })
+    setupAgent(t.context, { application_logging: { enabled: false } })
+    const { agent, pino, stream } = t.context
     const disabledLogger = pino({ level: 'info' }, stream)
     const message = 'logs are not enriched'
     disabledLogger.info(message)
@@ -82,14 +63,15 @@ tap.test('Pino instrumentation', (t) => {
   })
 
   t.test('logging enabled', (t) => {
-    setupAgent({ application_logging: { enabled: true } })
+    setupAgent(t.context, { application_logging: { enabled: true } })
+    const { agent } = t.context
     const metric = agent.metrics.getMetric(LOGGING.LIBS.PINO)
     t.equal(metric.callCount, 1, `should create ${LOGGING.LIBS.PINO} metric`)
     t.end()
   })
 
   t.test('local_decorating', (t) => {
-    setupAgent({
+    setupAgent(t.context, {
       application_logging: {
         enabled: true,
         local_decorating: { enabled: true },
@@ -97,10 +79,11 @@ tap.test('Pino instrumentation', (t) => {
         metrics: { enabled: false }
       }
     })
+    const { agent, logger, stream } = t.context
     const message = 'pino decorating test'
     helper.runInTransaction(agent, 'pino-test', async () => {
       logger.info(message)
-      const line = await once(stream, 'data')
+      let line = await once(stream, 'data')
       originalMsgAssertion({
         t,
         includeLocalDecorating: true,
@@ -108,15 +91,27 @@ tap.test('Pino instrumentation', (t) => {
         logLine: line
       })
       t.same(agent.logs.getEvents(), [], 'should not add any logs to log aggregator')
+
+      // Verify that merging object only logs get decorated:
+      logger.info({ msg: message })
+      line = await once(stream, 'data')
+      t.equal(line.msg.startsWith(`${message} NR-LINKING|test-guid`), true)
+      originalMsgAssertion({
+        t,
+        includeLocalDecorating: true,
+        hostname: agent.config.getHostnameSafe(),
+        logLine: line
+      })
+      t.same(agent.logs.getEvents(), [], 'should not add any logs to log aggregator')
+
       t.end()
     })
   })
 
   t.test('forwarding', (t) => {
-    let config
     t.autoend()
-    t.beforeEach(() => {
-      config = setupAgent({
+    t.beforeEach((t) => {
+      t.context.config = setupAgent(t.context, {
         application_logging: {
           enabled: true,
           local_decorating: { enabled: false },
@@ -127,6 +122,7 @@ tap.test('Pino instrumentation', (t) => {
     })
 
     t.test('should have proper metadata outside of a transaction', async (t) => {
+      const { agent, config, logger, stream } = t.context
       const message = 'pino unit test'
       const level = 'info'
       logger[level](message)
@@ -138,11 +134,12 @@ tap.test('Pino instrumentation', (t) => {
       })
       t.equal(agent.logs.getEvents().length, 1, 'should have 1 log in aggregator')
       const formattedLine = agent.logs.getEvents()[0]()
-      t.validateNrLogLine({ line: formattedLine, message, level, config })
+      t.validateAnnotations({ line: formattedLine, message, level, config })
       t.end()
     })
 
     t.test('should not crash nor enqueue log line when invalid json', async (t) => {
+      const { agent, config, pino } = t.context
       // When you log an object that will be the first arg to the logger level
       // the 2nd arg is the message
       const message = { 'pino "unit test': 'prop' }
@@ -157,7 +154,7 @@ tap.test('Pino instrumentation', (t) => {
       // See: https://github.com/pinojs/pino/pull/1779/files
       if (semver.gte(pinoVersion, '8.15.1')) {
         const formattedLine = agent.logs.getEvents()[0]()
-        t.validateNrLogLine({ line: formattedLine, message: testMsg, level, config })
+        t.validateAnnotations({ line: formattedLine, message: testMsg, level, config })
       } else {
         t.notOk(agent.logs.getEvents()[0](), 'should not return a log line if invalid')
         t.notOk(agent.logs._toPayloadSync(), 'should not send any logs')
@@ -166,6 +163,7 @@ tap.test('Pino instrumentation', (t) => {
     })
 
     t.test('should have proper error keys when error is present', async (t) => {
+      const { agent, config, logger, stream } = t.context
       const err = new Error('This is a test')
       const level = 'error'
       logger[level](err)
@@ -178,7 +176,7 @@ tap.test('Pino instrumentation', (t) => {
       })
       t.equal(agent.logs.getEvents().length, 1, 'should have 1 log in aggregator')
       const formattedLine = agent.logs.getEvents()[0]()
-      t.validateNrLogLine({
+      t.validateAnnotations({
         line: formattedLine,
         message: err.message,
         level,
@@ -192,6 +190,7 @@ tap.test('Pino instrumentation', (t) => {
     })
 
     t.test('should add proper trace info in transaction', (t) => {
+      const { agent, config, logger, stream } = t.context
       helper.runInTransaction(agent, 'pino-test', async (tx) => {
         const level = 'info'
         const message = 'My debug test'
@@ -216,7 +215,7 @@ tap.test('Pino instrumentation', (t) => {
         )
 
         const formattedLine = agent.logs.getEvents()[0]()
-        t.validateNrLogLine({ line: formattedLine, message, level, config })
+        t.validateAnnotations({ line: formattedLine, message, level, config })
         t.equal(formattedLine['trace.id'], meta['trace.id'])
         t.equal(formattedLine['span.id'], meta['span.id'])
         t.end()
@@ -226,6 +225,7 @@ tap.test('Pino instrumentation', (t) => {
     t.test(
       'should assign hostname from NR linking metadata when not defined as a core chinding',
       async (t) => {
+        const { agent, config, pino } = t.context
         const localStream = sink()
         const localLogger = pino({ base: undefined }, localStream)
         const message = 'pino unit test'
@@ -236,12 +236,13 @@ tap.test('Pino instrumentation', (t) => {
         t.notOk(line.hostname, 'should not have hostname when overriding base chindings')
         t.equal(agent.logs.getEvents().length, 1, 'should have 1 log in aggregator')
         const formattedLine = agent.logs.getEvents()[0]()
-        t.validateNrLogLine({ line: formattedLine, message, level, config })
+        t.validateAnnotations({ line: formattedLine, message, level, config })
         t.end()
       }
     )
 
     t.test('should properly handle child loggers', (t) => {
+      const { agent, config, logger, stream } = t.context
       const childLogger = logger.child({ module: 'child' })
       helper.runInTransaction(agent, 'pino-test', async (tx) => {
         // these are defined in opposite order because the log aggregator is LIFO
@@ -276,7 +277,7 @@ tap.test('Pino instrumentation', (t) => {
 
         agent.logs.getEvents().forEach((logLine, index) => {
           const formattedLine = logLine()
-          t.validateNrLogLine({
+          t.validateAnnotations({
             line: formattedLine,
             message: messages[index],
             level,
@@ -294,7 +295,7 @@ tap.test('Pino instrumentation', (t) => {
     t.autoend()
 
     t.test('should count logger metrics', (t) => {
-      setupAgent({
+      setupAgent(t.context, {
         application_logging: {
           enabled: true,
           local_decorating: { enabled: false },
@@ -302,6 +303,7 @@ tap.test('Pino instrumentation', (t) => {
           metrics: { enabled: true }
         }
       })
+      const { agent, pino, stream } = t.context
 
       const pinoLogger = pino(
         {
@@ -371,7 +373,8 @@ tap.test('Pino instrumentation', (t) => {
     ]
     configValues.forEach(({ name, config }) => {
       t.test(`should not count logger metrics when ${name}`, (t) => {
-        setupAgent(config)
+        setupAgent(t.context, config)
+        const { agent, logger, stream } = t.context
         helper.runInTransaction(agent, 'pino-test', async () => {
           logger.info('This is a log message test')
           await once(stream, 'data')
@@ -384,5 +387,20 @@ tap.test('Pino instrumentation', (t) => {
         })
       })
     })
+  })
+
+  t.test('should honor msg key in merging object (issue 2410)', async (t) => {
+    t.context.config = setupAgent(t.context, { application_logging: { enabled: true } })
+    const { agent, config, pino } = t.context
+    const localStream = sink()
+    const localLogger = pino({ base: undefined }, localStream)
+    const message = 'pino unit test'
+    const level = 'info'
+    localLogger[level]({ msg: message })
+    await once(localStream, 'data')
+    t.equal(agent.logs.getEvents().length, 1, 'should have 1 log in aggregator')
+    const formattedLine = agent.logs.getEvents()[0]()
+    t.validateAnnotations({ line: formattedLine, message, level, config })
+    t.end()
   })
 })

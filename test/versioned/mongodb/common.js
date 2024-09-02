@@ -5,10 +5,7 @@
 
 'use strict'
 
-const fs = require('fs')
-const mongoPackage = require('mongodb/package.json')
 const params = require('../../lib/params')
-const semver = require('semver')
 const urltils = require('../../../lib/util/urltils')
 
 const MONGO_SEGMENT_RE = /^Datastore\/.*?\/MongoDB/
@@ -16,137 +13,62 @@ const TRANSACTION_NAME = 'mongo test'
 const DB_NAME = 'integration'
 const COLLECTIONS = { collection1: 'testCollection', collection2: 'testCollection2' }
 const STATEMENT_PREFIX = `Datastore/statement/MongoDB/${COLLECTIONS.collection1}`
+const ESM = {
+  DB_NAME: 'esmIntegration',
+  COLLECTIONS: { collection1: 'esmTestCollection', collection2: 'esmTestCollection2' },
+  STATEMENT_PREFIX: 'Datastore/statement/MongoDB/esmTestCollection'
+}
+exports.ESM = ESM
 
 exports.MONGO_SEGMENT_RE = MONGO_SEGMENT_RE
 exports.TRANSACTION_NAME = TRANSACTION_NAME
 exports.DB_NAME = DB_NAME
 exports.COLLECTIONS = COLLECTIONS
 exports.STATEMENT_PREFIX = STATEMENT_PREFIX
-exports.pkgVersion = mongoPackage.version
 
-// Check package versions to decide which connect function to use below
-exports.connect = function connect() {
-  if (semver.satisfies(mongoPackage.version, '<3')) {
-    return connectV2.apply(this, arguments)
-  } else if (semver.satisfies(mongoPackage.version, '>=3 <4.2.0')) {
-    return connectV3.apply(this, arguments)
-  }
-  return connectV4.apply(this, arguments)
-}
-
-exports.checkMetrics = checkMetrics
+exports.connect = connect
 exports.close = close
+exports.checkMetrics = checkMetrics
 exports.getHostName = getHostName
 exports.getPort = getPort
-exports.getDomainSocketPath = getDomainSocketPath
 
-function connectV2(mongodb, path) {
-  return new Promise((resolve, reject) => {
-    let server = null
-    if (path) {
-      server = new mongodb.Server(path)
-    } else {
-      server = new mongodb.Server(params.mongodb_host, params.mongodb_port, {
-        socketOptions: {
-          connectionTimeoutMS: 30000,
-          socketTimeoutMS: 30000
-        }
-      })
-    }
+async function connect({ mongodb, host, replicaSet = false, name = DB_NAME }) {
+  if (host) {
+    host = encodeURIComponent(host)
+  } else {
+    host = params.mongodb_host + ':' + params.mongodb_port
+  }
 
-    const db = new mongodb.Db(DB_NAME, server)
+  let connString = `mongodb://${host}`
+  let options = {}
 
-    db.open(function (err) {
-      if (err) {
-        reject(err)
-      }
-
-      resolve({ db, client: null })
-    })
-  })
+  if (replicaSet) {
+    connString = `mongodb://${host},${host},${host}`
+    options = { useNewUrlParser: true, useUnifiedTopology: true }
+  }
+  const client = await mongodb.MongoClient.connect(connString, options)
+  const db = client.db(name)
+  return { db, client }
 }
 
-function connectV3(mongodb, host, replicaSet = false) {
-  return new Promise((resolve, reject) => {
-    if (host) {
-      host = encodeURIComponent(host)
-    } else {
-      host = params.mongodb_host + ':' + params.mongodb_port
-    }
-
-    let connString = `mongodb://${host}`
-    let options = {}
-
-    if (replicaSet) {
-      connString = `mongodb://${host},${host},${host}`
-      options = { useNewUrlParser: true, useUnifiedTopology: true }
-    }
-    mongodb.MongoClient.connect(connString, options, function (err, client) {
-      if (err) {
-        reject(err)
-      }
-
-      const db = client.db(DB_NAME)
-      resolve({ db, client })
-    })
-  })
-}
-
-// This is same as connectV3 except it uses a different
-// set of params to connect to the mongodb_v4 container
-// it is actually just using the `mongodb:5` image
-function connectV4(mongodb, host, replicaSet = false) {
-  return new Promise((resolve, reject) => {
-    if (host) {
-      host = encodeURIComponent(host)
-    } else {
-      host = params.mongodb_v4_host + ':' + params.mongodb_v4_port
-    }
-
-    let connString = `mongodb://${host}`
-    let options = {}
-
-    if (replicaSet) {
-      connString = `mongodb://${host},${host},${host}`
-      options = { useNewUrlParser: true, useUnifiedTopology: true }
-    }
-    mongodb.MongoClient.connect(connString, options, function (err, client) {
-      if (err) {
-        reject(err)
-      }
-
-      const db = client.db(DB_NAME)
-      resolve({ db, client })
-    })
-  })
-}
-
-function close(client, db) {
-  return new Promise((resolve) => {
-    if (db && typeof db.close === 'function') {
-      db.close(resolve)
-    } else if (client) {
-      client.close(true, resolve)
-    } else {
-      resolve()
-    }
-  })
+async function close(client, db) {
+  if (db && typeof db.close === 'function') {
+    await db.close()
+  } else if (client) {
+    await client.close(true)
+  }
 }
 
 function getHostName(agent) {
-  const host = semver.satisfies(mongoPackage.version, '>=4.2.0')
-    ? params.mongodb_v4_host
-    : params.mongodb_host
+  const host = params.mongodb_host
   return urltils.isLocalhost(host) ? agent.config.getHostnameSafe() : host
 }
 
 function getPort() {
-  return semver.satisfies(mongoPackage.version, '>=4.2.0')
-    ? String(params.mongodb_v4_port)
-    : String(params.mongodb_port)
+  return String(params.mongodb_port)
 }
 
-function checkMetrics(t, agent, host, port, metrics) {
+function checkMetrics({ t, agent, host, port, metrics = [], prefix = STATEMENT_PREFIX }) {
   const agentMetrics = getMetrics(agent)
 
   const unscopedMetrics = agentMetrics.unscoped
@@ -181,20 +103,21 @@ function checkMetrics(t, agent, host, port, metrics) {
       'unscoped operation metric should be called ' + count + ' times'
     )
     t.equal(
-      unscopedMetrics[`${STATEMENT_PREFIX}/` + name].callCount,
+      unscopedMetrics[`${prefix}/` + name].callCount,
       count,
       'unscoped statement metric should be called ' + count + ' times'
     )
     t.equal(
-      scoped[`${STATEMENT_PREFIX}/` + name].callCount,
+      scoped[`${prefix}/` + name].callCount,
       count,
       'scoped statement metric should be called ' + count + ' times'
     )
   }
 
   let expectedUnscopedCount = 5 + 2 * metrics.length
-  // adds a supportability metric to load k2 mongodb instrumentation
   if (agent.config.security.agent.enabled) {
+    // The security agent adds a `Supportability/API/instrumentDatastore` metric
+    // via `API.prototype.instrumentDatastore`.
     expectedUnscopedCount += 1
   }
   t.equal(
@@ -214,17 +137,6 @@ function checkMetrics(t, agent, host, port, metrics) {
       t.equal(unscopedMetrics[metric].callCount, total, 'should have correct call count')
     }
   })
-}
-
-function getDomainSocketPath() {
-  const files = fs.readdirSync('/tmp')
-  for (let i = 0; i < files.length; ++i) {
-    const file = '/tmp/' + files[i]
-    if (/^\/tmp\/mongodb.*?\.sock$/.test(file)) {
-      return file
-    }
-  }
-  return null
 }
 
 function getMetrics(agent) {

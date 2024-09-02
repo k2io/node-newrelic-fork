@@ -1,17 +1,31 @@
 {
   "name": "express-esm-tests",
+  "targets": [{"name":"express","minAgentVersion":"2.6.0"}],
   "version": "0.0.0",
   "type": "module",
   "private": true,
   "tests": [
     {
       "engines": {
-        "node": ">=16.12.0"
+        "node": ">=18"
       },
       "dependencies": {
-        "express": ">=4.6.0",
-        "express-enrouten": "1.1",
-        "ejs": "2.5.9"
+        "express": {
+          "versions": ">=4.6.0",
+          "samples": 5
+        }
+      },
+      "files": [
+        "segments.tap.mjs",
+        "transaction-naming.tap.mjs"
+      ]
+    },
+    {
+      "engines": {
+        "node": ">=18"
+      },
+      "dependencies": {
+        "express": "5.0.0-beta.3"
       },
       "files": [
         "segments.tap.mjs",

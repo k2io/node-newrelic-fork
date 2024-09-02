@@ -37,13 +37,6 @@ For more information about CLAs, please check out Alex Russell’s excellent
 post, [“Why Do I Need to Sign
 This?”](https://infrequently.org/2008/06/why-do-i-need-to-sign-this/).
 
-### Slack
-
-We host a public Slack with a dedicated channel for contributors and
-maintainers of open source projects hosted by New Relic. If you are
-contributing to this project, you're welcome to request access to the
-\#oss-contributors channel in the newrelicusers.slack.com workspace. To request access, please use this [link](https://join.slack.com/t/newrelicusers/shared_invite/zt-1ayj69rzm-~go~Eo1whIQGYnu3qi15ng).
-
 ## PR Guidelines
 
 ### Version Support
@@ -113,7 +106,7 @@ To run the tests you need an openssl command-line binary, and some services:
 * Redis
 
 If you have these all running locally on the standard ports, then you are good
-to go. However, the suggested path is to use [Docker](http://www.docker.com).
+to go. However, the suggested path is to use [Docker](https://www.docker.com).
 If you use macOS or Windows, install [Docker Desktop]
 (https://www.docker.com/products/docker-desktop). Then, run `npm run services`
 to download and launch docker containers for each of the above services.

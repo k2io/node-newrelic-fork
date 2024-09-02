@@ -13,26 +13,6 @@
  */
 const repos = [
   {
-    name: 'aws-sdk',
-    repository: 'https://github.com/newrelic/node-newrelic-aws-sdk.git',
-    branch: 'main'
-  },
-  {
-    name: 'koa',
-    repository: 'https://github.com/newrelic/node-newrelic-koa.git',
-    branch: 'main'
-  },
-  {
-    name: 'next',
-    repository: 'https://github.com/newrelic/newrelic-node-nextjs.git',
-    branch: 'main'
-  },
-  {
-    name: 'superagent',
-    repository: 'https://github.com/newrelic/node-newrelic-superagent.git',
-    branch: 'main'
-  },
-  {
     name: 'apollo-server',
     repository: 'https://github.com/newrelic/newrelic-node-apollo-server-plugin.git',
     branch: 'main',

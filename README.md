@@ -61,6 +61,37 @@ If you cannot control how your program is run, you can load the `newrelic` modul
     /* ... the rest of your program ... */
 ```
 
+## Next.js instrumentation
+**Note**: The minimum supported Next.js version is [12.0.9](https://github.com/vercel/next.js/releases/tag/v12.0.9).  If you are using Next.js middleware the minimum supported version is [12.2.0](https://github.com/vercel/next.js/releases/tag/v12.2.0).
+
+The New Relic Node.js agent provides instrumentation for Next.js  The instrumentation provides telemetry for server-side rendering via [getServerSideProps](https://nextjs.org/docs/basic-features/data-fetching/get-server-side-props), [middleware](https://nextjs.org/docs/middleware), and New Relic transaction naming for both page and server requests. It does not provide any instrumentation for actions occurring during build or in client-side code.  If you want telemetry data on actions occurring on the client (browser), you can [inject the browser agent](./documentation/nextjs/faqs/browser-agent.md).
+
+Here are documents for more in-depth explanations about [transaction naming](./documentation/nextjs/transactions.md), and [segments/spans](./documentation/nextjs/segments-and-spans.md).
+
+
+### Setup
+Typically you are running a Next.js app with the `next` cli and you must load the agent via `NODE_OPTIONS`:
+
+```sh
+NODE_OPTIONS='-r newrelic' next start
+```
+
+If you are having trouble getting the `newrelic` package to instrument Next.js, take a look at our [FAQs](./documentation/nextjs/faqs/README.md).
+
+### Next.js example projects
+The following example applications show how to load the `newrelic` instrumentation, inject browser agent, and handle errors:
+
+ * [Pages Router example](https://github.com/newrelic/newrelic-node-examples/tree/58f760e828c45d90391bda3f66764d4420ba4990/nextjs-legacy)
+ * [App Router example](https://github.com/newrelic/newrelic-node-examples/tree/58f760e828c45d90391bda3f66764d4420ba4990/nextjs-app-router)
+
+### Custom Next.js servers
+
+If you are using next as a [custom server](https://nextjs.org/docs/advanced-features/custom-server), you're probably not running your application with the `next` CLI.  In that scenario we recommend running the Next.js instrumentation as follows.
+
+```sh
+node -r newrelic your-program.js
+```
+
 ## ECMAScript Modules
 
 If your application is written with `import` and `export` statements in javascript, you are using [ES Modules](https://nodejs.org/api/esm.html#modules-ecmascript-modules) and must bootstrap the agent in a different way.
@@ -118,16 +149,12 @@ For more information on getting started, [check the Node.js docs](https://docs.n
 
 ### External Modules
 
-There are several modules that can be installed and configured to accompany the Node.js agent:
+There are modules that can be installed and configured to accompany the Node.js agent:
 
  * [@newrelic/apollo-server-plugin](https://github.com/newrelic/newrelic-node-apollo-server-plugin): New Relic's official Apollo Server plugin for use with the Node.js agent.
- * [@newrelic/next](https://github.com/newrelic/newrelic-node-nextjs): Provides instrumentation for the [Next.js](https://github.com/vercel/next.js/) npm package.
 
-There are several modules included within the Node.js agent to add more instrumentation for 3rd party modules:
+There are modules included within the Node.js agent to add more instrumentation for 3rd party modules:
 
- * [@newrelic/aws-sdk](https://github.com/newrelic/node-newrelic-aws-sdk):  Provides instrumentation for the [AWS SDK](https://www.npmjs.com/package/aws-sdk) npm package.
- * [@newrelic/koa](https://github.com/newrelic/node-newrelic-koa): Provides instrumentation for [koa](https://koajs.com/), [koa-router](https://github.com/ZijianHe/koa-router), [@koa/router](https://github.com/koajs/router), and [koa-route](https://github.com/koajs/route) npm packages.
- * [@newrelic/superagent](https://github.com/newrelic/node-newrelic-superagent): Provides instrumentation for [superagent](https://github.com/visionmedia/superagent) npm package.
  * [@newrelic/native-metrics](https://github.com/newrelic/node-native-metrics): Provides hooks into the native v8 layer of Node.js to provide metrics to the Node.js agent.
 
 ## Usage
@@ -158,7 +185,7 @@ These are the steps to work on core agent features, with more detail below:
     $ git clone git@github.com:your-user-name/node-newrelic.git
     $ cd node-newrelic
 
-2. Install the project's dependences:
+2. Install the project's dependencies:
 
     $ npm install
 
@@ -184,7 +211,7 @@ Here are some resources for learning more about the agent:
 
 - [New Relic's official Node.js agent documentation](https://docs.newrelic.com/docs/agents/nodejs-agent)
 
-- [Developer docs](http://newrelic.github.io/node-newrelic/)
+- [Developer docs](https://newrelic.github.io/node-newrelic/)
 
 - [Configuring the agent using `newrelic.js` or environment variables](https://docs.newrelic.com/docs/agents/nodejs-agent/installation-configuration/nodejs-agent-configuration)
 
@@ -234,7 +261,7 @@ If you have any questions, or to execute our corporate CLA, required if your con
 
 As noted in our [security policy](../../security/policy), New Relic is committed to the privacy and security of our customers and their data. We believe that providing coordinated disclosure by security researchers and engaging with the security community are important means to achieve our security goals.
 
-If you believe you have found a security vulnerability in this project or any of New Relic's products or websites, we welcome and greatly appreciate you reporting it to New Relic through [HackerOne](https://hackerone.com/newrelic).
+If you believe you have found a security vulnerability in this project or any of New Relic's products or websites, we welcome and greatly appreciate you reporting it to New Relic through [our bug bounty program](https://docs.newrelic.com/docs/security/security-privacy/information-security/report-security-vulnerabilities/).
 
 If you would like to contribute to this project, review [these guidelines](./CONTRIBUTING.md).
 
@@ -242,7 +269,9 @@ To [all contributors](https://github.com/newrelic/node-newrelic/graphs/contribut
 
 ## License
 
-The Node.js agent is licensed under the [Apache 2.0](http://apache.org/licenses/LICENSE-2.0.txt) License.
+Except as noted below, the Node.js agent is licensed under the [Apache 2.0](https://apache.org/licenses/LICENSE-2.0.txt) License.
+
+The New Relic [security agent](https://github.com/newrelic/csec-node-agent) is licensed under the New Relic Software License v1.0.  The New Relic security agent module may be integrated like the New Relic Node.js agent.
 
 The Node.js agent also uses source code from third-party libraries. You can find full details on which libraries are used and the terms under which they are licensed in [the third-party notices document](https://github.com/newrelic/node-newrelic/blob/main/THIRD_PARTY_NOTICES.md).
 

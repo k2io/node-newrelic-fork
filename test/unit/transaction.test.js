@@ -204,6 +204,14 @@ tap.test('Transaction unit tests', (t) => {
     t.equal(another.apdexT, 0.1, 'should not require a key transaction apdexT')
     t.end()
   })
+
+  t.test('should ignore calculating apdex when ignoreApdex is true', (t) => {
+    txn.ignoreApdex = true
+    txn._setApdex('Apdex/TestController/key', 1200, 667)
+    const metric = txn.metrics.getMetric('Apdex/TestController/key')
+    t.notOk(metric)
+    t.end()
+  })
 })
 
 tap.test('Transaction naming tests', (t) => {
@@ -651,6 +659,29 @@ tap.test('Transaction methods', (t) => {
       t.equal(attributes.synthetics_resource_id, 'resId')
       t.equal(attributes.synthetics_job_id, 'jobId')
       t.equal(attributes.synthetics_monitor_id, 'monId')
+      t.end()
+    })
+
+    t.test('includes Synthetics Info attributes', (t) => {
+      // spec states must be present too
+      txn.syntheticsData = {}
+      txn.syntheticsInfoData = {
+        version: 1,
+        type: 'unitTest',
+        initiator: 'cli',
+        attributes: {
+          'Attr-Test': 'value',
+          'attr2Test': 'value1',
+          'xTest-Header': 'value2'
+        }
+      }
+
+      const attributes = txn.getIntrinsicAttributes()
+      t.equal(attributes.synthetics_type, 'unitTest')
+      t.equal(attributes.synthetics_initiator, 'cli')
+      t.equal(attributes.synthetics_attr_test, 'value')
+      t.equal(attributes.synthetics_attr_2_test, 'value1')
+      t.equal(attributes.synthetics_x_test_header, 'value2')
       t.end()
     })
 

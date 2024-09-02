@@ -8,10 +8,9 @@
 const tap = require('tap')
 const hashes = require('../../../lib/util/hashes')
 const helper = require('../../lib/agent_helper')
+const { TransactionSpec } = require('../../../lib/shim/specs')
 const TransactionShim = require('../../../lib/shim/transaction-shim')
 const notRunningStates = ['stopped', 'stopping', 'errored']
-
-tap.Test.prototype.addAssert('isNonWritable', 1, helper.isNonWritable)
 
 /**
  * Creates CAT headers to be used in handleMqTracingHeaders
@@ -108,6 +107,17 @@ tap.test('TransactionShim', function (t) {
       }, /^Shim must be initialized with .*? module name/)
       t.end()
     })
+
+    t.test('should assign properties from parent', (t) => {
+      const mod = 'test-mod'
+      const name = mod
+      const version = '1.0.0'
+      const shim = new TransactionShim(agent, mod, mod, name, version)
+      t.equal(shim.moduleName, mod)
+      t.equal(agent, shim._agent)
+      t.equal(shim.pkgVersion, version)
+      t.end()
+    })
   })
 
   t.test('#WEB, #BG, #MESSAGE', function (t) {
@@ -135,13 +145,16 @@ tap.test('TransactionShim', function (t) {
     t.afterEach(afterEach)
 
     t.test('should not wrap non-functions', function (t) {
-      shim.bindCreateTransaction(wrappable, 'name', { type: shim.WEB })
+      shim.bindCreateTransaction(wrappable, 'name', new TransactionSpec({ type: shim.WEB }))
       t.notOk(shim.isWrapped(wrappable.name))
       t.end()
     })
 
     t.test('should wrap the first parameter if no properties are given', function (t) {
-      const wrapped = shim.bindCreateTransaction(wrappable.bar, { type: shim.WEB })
+      const wrapped = shim.bindCreateTransaction(
+        wrappable.bar,
+        new TransactionSpec({ type: shim.WEB })
+      )
       t.not(wrapped, wrappable.bar)
       t.ok(shim.isWrapped(wrapped))
       t.equal(shim.unwrap(wrapped), wrappable.bar)
@@ -149,7 +162,11 @@ tap.test('TransactionShim', function (t) {
     })
 
     t.test('should wrap the first parameter if `null` is given for properties', function (t) {
-      const wrapped = shim.bindCreateTransaction(wrappable.bar, null, { type: shim.WEB })
+      const wrapped = shim.bindCreateTransaction(
+        wrappable.bar,
+        null,
+        new TransactionSpec({ type: shim.WEB })
+      )
       t.not(wrapped, wrappable.bar)
       t.ok(shim.isWrapped(wrapped))
       t.equal(shim.unwrap(wrapped), wrappable.bar)
@@ -158,7 +175,7 @@ tap.test('TransactionShim', function (t) {
 
     t.test('should replace wrapped properties on the original object', function (t) {
       const original = wrappable.bar
-      shim.bindCreateTransaction(wrappable, 'bar', { type: shim.WEB })
+      shim.bindCreateTransaction(wrappable, 'bar', new TransactionSpec({ type: shim.WEB }))
       t.not(wrappable.bar, original)
       t.ok(shim.isWrapped(wrappable, 'bar'))
       t.equal(shim.unwrap(wrappable, 'bar'), original)
@@ -175,17 +192,14 @@ tap.test('TransactionShim', function (t) {
       let executed = false
       const context = {}
       const value = {}
-      const wrapped = shim.bindCreateTransaction(
-        function (a, b, c) {
-          executed = true
-          t.equal(this, context)
-          t.equal(a, 'a')
-          t.equal(b, 'b')
-          t.equal(c, 'c')
-          return value
-        },
-        { type: shim.WEB }
-      )
+      const wrapped = shim.bindCreateTransaction(function (a, b, c) {
+        executed = true
+        t.equal(this, context)
+        t.equal(a, 'a')
+        t.equal(b, 'b')
+        t.equal(c, 'c')
+        return value
+      }, new TransactionSpec({ type: shim.WEB }))
 
       t.notOk(executed)
       const ret = wrapped.call(context, 'a', 'b', 'c')
@@ -195,12 +209,20 @@ tap.test('TransactionShim', function (t) {
     })
 
     t.test('should create a transaction with the correct type', function (t) {
-      shim.bindCreateTransaction(wrappable, 'getActiveSegment', { type: shim.WEB })
+      shim.bindCreateTransaction(
+        wrappable,
+        'getActiveSegment',
+        new TransactionSpec({ type: shim.WEB })
+      )
       const segment = wrappable.getActiveSegment()
       t.equal(segment.transaction.type, shim.WEB)
 
       shim.unwrap(wrappable, 'getActiveSegment')
-      shim.bindCreateTransaction(wrappable, 'getActiveSegment', { type: shim.BG })
+      shim.bindCreateTransaction(
+        wrappable,
+        'getActiveSegment',
+        new TransactionSpec({ type: shim.BG })
+      )
       const bgSegment = wrappable.getActiveSegment()
       t.equal(bgSegment.transaction.type, shim.BG)
       t.end()
@@ -211,21 +233,15 @@ tap.test('TransactionShim', function (t) {
       let bgTx = null
       let webCalled = false
       let bgCalled = false
-      const bg = shim.bindCreateTransaction(
-        function () {
-          bgCalled = true
-          bgTx = shim.getSegment().transaction
-        },
-        { type: shim.BG }
-      )
-      const web = shim.bindCreateTransaction(
-        function () {
-          webCalled = true
-          webTx = shim.getSegment().transaction
-          bg()
-        },
-        { type: shim.WEB }
-      )
+      const bg = shim.bindCreateTransaction(function () {
+        bgCalled = true
+        bgTx = shim.getSegment().transaction
+      }, new TransactionSpec({ type: shim.BG }))
+      const web = shim.bindCreateTransaction(function () {
+        webCalled = true
+        webTx = shim.getSegment().transaction
+        bg()
+      }, new TransactionSpec({ type: shim.WEB }))
 
       web()
       t.ok(webCalled)
@@ -240,13 +256,10 @@ tap.test('TransactionShim', function (t) {
 
         let callbackCalled = false
         let transaction = null
-        const wrapped = shim.bindCreateTransaction(
-          () => {
-            callbackCalled = true
-            transaction = shim.tracer.getTransaction()
-          },
-          { type: shim.BG }
-        )
+        const wrapped = shim.bindCreateTransaction(() => {
+          callbackCalled = true
+          transaction = shim.tracer.getTransaction()
+        }, new TransactionSpec({ type: shim.BG }))
 
         wrapped()
 
@@ -267,25 +280,19 @@ tap.test('TransactionShim', function (t) {
     t.beforeEach(function () {
       beforeEach()
       transactions = []
-      web = shim.bindCreateTransaction(
-        function (cb) {
-          transactions.push(shim.getSegment().transaction)
-          if (cb) {
-            cb()
-          }
-        },
-        { type: shim.WEB, nest: true }
-      )
+      web = shim.bindCreateTransaction(function (cb) {
+        transactions.push(shim.getSegment().transaction)
+        if (cb) {
+          cb()
+        }
+      }, new TransactionSpec({ type: shim.WEB, nest: true }))
 
-      bg = shim.bindCreateTransaction(
-        function (cb) {
-          transactions.push(shim.getSegment().transaction)
-          if (cb) {
-            cb()
-          }
-        },
-        { type: shim.BG, nest: true }
-      )
+      bg = shim.bindCreateTransaction(function (cb) {
+        transactions.push(shim.getSegment().transaction)
+        if (cb) {
+          cb()
+        }
+      }, new TransactionSpec({ type: shim.BG, nest: true }))
     })
     t.afterEach(afterEach)
 
@@ -332,13 +339,10 @@ tap.test('TransactionShim', function (t) {
 
         let callbackCalled = false
         let transaction = null
-        const wrapped = shim.bindCreateTransaction(
-          () => {
-            callbackCalled = true
-            transaction = shim.tracer.getTransaction()
-          },
-          { type: shim.BG, nest: true }
-        )
+        const wrapped = shim.bindCreateTransaction(() => {
+          callbackCalled = true
+          transaction = shim.tracer.getTransaction()
+        }, new TransactionSpec({ type: shim.BG, nest: true }))
 
         wrapped()
 

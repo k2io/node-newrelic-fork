@@ -1,12 +1,13 @@
 {
   "name": "grpc-esm-tests",
+  "targets": [{"name":"@grpc/grpc-js","minAgentVersion":"8.17.0"}],
   "version": "0.0.0",
   "type": "module",
   "private": true,
   "tests": [
     {
       "engines": {
-        "node": ">=16.12.0"
+        "node": ">=18"
       },
       "dependencies": {
         "@grpc/grpc-js": ">=1.4.0"

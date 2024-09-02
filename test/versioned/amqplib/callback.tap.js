@@ -8,6 +8,7 @@
 const amqpUtils = require('./amqp-utils')
 const API = require('../../../api')
 const helper = require('../../lib/agent_helper')
+const { removeMatchedModules } = require('../../lib/cache-buster')
 const tap = require('tap')
 
 /*
@@ -64,11 +65,7 @@ tap.test('amqplib callback instrumentation', function (t) {
 
   t.afterEach(function () {
     helper.unloadAgent(agent)
-    Object.keys(require.cache).forEach(function (key) {
-      if (/amqplib/.test(key)) {
-        delete require.cache[key]
-      }
-    })
+    removeMatchedModules(/amqplib/)
 
     if (!conn) {
       return
@@ -78,21 +75,16 @@ tap.test('amqplib callback instrumentation', function (t) {
   })
 
   t.test('connect in a transaction', function (t) {
-    helper.runInTransaction(agent, function () {
-      t.doesNotThrow(function () {
-        amqplib.connect(amqpUtils.CON_STRING, null, function (err, _conn) {
-          t.error(err, 'should not break connection')
-          if (!t.passing()) {
-            t.bailout('Can not connect to RabbitMQ, stopping tests.')
-          }
-          _conn.close(t.end)
-        })
-      }, 'should not error when connecting')
-
-      // If connect threw, we need to end the test immediately.
-      if (!t.passing()) {
-        t.end()
-      }
+    helper.runInTransaction(agent, function (tx) {
+      amqplib.connect(amqpUtils.CON_STRING, null, function (err, _conn) {
+        t.error(err, 'should not break connection')
+        const [segment] = tx.trace.root.children
+        t.equal(segment.name, 'amqplib.connect')
+        const attrs = segment.getAttributes()
+        t.equal(attrs.host, 'localhost')
+        t.equal(attrs.port_path_or_id, 5672)
+        _conn.close(t.end)
+      })
     })
   })
 
@@ -235,7 +227,58 @@ tap.test('amqplib callback instrumentation', function (t) {
               channel.ack(msg)
               setImmediate(function () {
                 tx.end()
-                amqpUtils.verifyGet(t, tx, exchange, 'consume-tx-key', queue)
+                amqpUtils.verifyGet({
+                  t,
+                  tx,
+                  exchangeName: exchange,
+                  routingKey: 'consume-tx-key',
+                  queue,
+                  assertAttr: true
+                })
+                t.end()
+              })
+            })
+          })
+        })
+      })
+    })
+  })
+
+  t.test('get a message disable parameters', function (t) {
+    agent.config.message_tracer.segment_parameters.enabled = false
+    const exchange = amqpUtils.DIRECT_EXCHANGE
+    let queue = null
+
+    channel.assertExchange(exchange, 'direct', null, function (err) {
+      t.error(err, 'should not error asserting exchange')
+
+      channel.assertQueue('', { exclusive: true }, function (err, res) {
+        t.error(err, 'should not error asserting queue')
+        queue = res.queue
+
+        channel.bindQueue(queue, exchange, 'consume-tx-key', null, function (err) {
+          t.error(err, 'should not error binding queue')
+
+          helper.runInTransaction(agent, function (tx) {
+            channel.publish(exchange, 'consume-tx-key', Buffer.from('hello'))
+            channel.get(queue, {}, function (err, msg) {
+              t.notOk(err, 'should not cause an error')
+              t.ok(msg, 'should receive a message')
+
+              amqpUtils.verifyTransaction(t, tx, 'get')
+              const body = msg.content.toString('utf8')
+              t.equal(body, 'hello', 'should receive expected body')
+
+              channel.ack(msg)
+              setImmediate(function () {
+                tx.end()
+                amqpUtils.verifyGet({
+                  t,
+                  tx,
+                  exchangeName: exchange,
+                  routingKey: 'consume-tx-key',
+                  queue
+                })
                 t.end()
               })
             })
@@ -327,7 +370,7 @@ tap.test('amqplib callback instrumentation', function (t) {
               function (msg) {
                 const consumeTxnHandle = api.getTransaction()
                 const consumeTxn = consumeTxnHandle._transaction
-                t.notEqual(consumeTxn, tx, 'should not be in original transaction')
+                t.not(consumeTxn, tx, 'should not be in original transaction')
                 t.ok(msg, 'should receive a message')
 
                 const body = msg.content.toString('utf8')

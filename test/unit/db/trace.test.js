@@ -5,36 +5,32 @@
 
 'use strict'
 
-// TODO: convert to normal tap style.
-// Below allows use of mocha DSL with tap runner.
-require('tap').mochaGlobals()
-
+const test = require('node:test')
+const assert = require('node:assert')
 const helper = require('../../lib/agent_helper')
-const chai = require('chai')
 
-const expect = chai.expect
-
-describe('SQL trace', function () {
-  describe('attributes', function () {
-    let agent
-
-    beforeEach(function () {
-      agent = helper.loadMockedAgent({
-        slow_sql: {
-          enabled: true
-        },
-        transaction_tracer: {
-          record_sql: 'raw',
-          explain_threshold: 0
-        }
-      })
+test('SQL trace attributes', async (t) => {
+  t.beforeEach((ctx) => {
+    ctx.nr = {}
+    ctx.nr.agent = helper.loadMockedAgent({
+      slow_sql: {
+        enabled: true
+      },
+      transaction_tracer: {
+        record_sql: 'raw',
+        explain_threshold: 0
+      }
     })
+  })
 
-    afterEach(function () {
-      helper.unloadAgent(agent)
-    })
+  t.afterEach((ctx) => {
+    helper.unloadAgent(ctx.nr.agent)
+  })
 
-    it('should include all DT intrinsics sans parentId and parentSpanId', function (done) {
+  await t.test(
+    'should include all DT intrinsics sans parentId and parentSpanId',
+    function (t, end) {
+      const { agent } = t.nr
       agent.config.distributed_tracing.enabled = true
       agent.config.primary_application_id = 'test'
       agent.config.account_id = 1
@@ -47,58 +43,61 @@ describe('SQL trace', function () {
         agent.queries.prepareJSON((err, samples) => {
           const sample = samples[0]
           const attributes = sample[sample.length - 1]
-          expect(attributes.traceId).to.equal(tx.traceId)
-          expect(attributes.guid).to.equal(tx.id)
-          expect(attributes.priority).to.equal(tx.priority)
-          expect(attributes.sampled).to.equal(tx.sampled)
-          expect(attributes['parent.type']).to.equal('App')
-          expect(attributes['parent.app']).to.equal(agent.config.primary_application_id)
-          expect(attributes['parent.account']).to.equal(agent.config.account_id)
-          expect(attributes.parentId).to.be.undefined
-          expect(attributes.parentSpanId).to.be.undefined
-          done()
+          assert.equal(attributes.traceId, tx.traceId)
+          assert.equal(attributes.guid, tx.id)
+          assert.equal(attributes.priority, tx.priority)
+          assert.equal(attributes.sampled, tx.sampled)
+          assert.equal(attributes['parent.type'], 'App')
+          assert.equal(attributes['parent.app'], agent.config.primary_application_id)
+          assert.equal(attributes['parent.account'], agent.config.account_id)
+          assert.ok(!attributes.parentId)
+          assert.ok(!attributes.parentSpanId)
+          end()
         })
       })
-    })
+    }
+  )
 
-    it('should serialize properly using prepareJSONSync', function () {
-      helper.runInTransaction(agent, function (tx) {
-        const query = 'select pg_sleep(1)'
-        agent.queries.add(tx.trace.root, 'postgres', query, 'FAKE STACK')
-        const sampleObj = agent.queries.samples.values().next().value
-        const sample = agent.queries.prepareJSONSync()[0]
-        expect(sample[0]).to.equal(tx.getFullName())
-        expect(sample[1]).to.equal('<unknown>')
-        expect(sample[2]).to.equal(sampleObj.trace.id)
-        expect(sample[3]).to.equal(query)
-        expect(sample[4]).to.equal(sampleObj.trace.metric)
-        expect(sample[5]).to.equal(sampleObj.callCount)
-        expect(sample[6]).to.equal(sampleObj.total)
-        expect(sample[7]).to.equal(sampleObj.min)
-        expect(sample[8]).to.equal(sampleObj.max)
-      })
+  await t.test('should serialize properly using prepareJSONSync', function (t, end) {
+    const { agent } = t.nr
+    helper.runInTransaction(agent, function (tx) {
+      const query = 'select pg_sleep(1)'
+      agent.queries.add(tx.trace.root, 'postgres', query, 'FAKE STACK')
+      const sampleObj = agent.queries.samples.values().next().value
+      const sample = agent.queries.prepareJSONSync()[0]
+      assert.equal(sample[0], tx.getFullName())
+      assert.equal(sample[1], '<unknown>')
+      assert.equal(sample[2], sampleObj.trace.id)
+      assert.equal(sample[3], query)
+      assert.equal(sample[4], sampleObj.trace.metric)
+      assert.equal(sample[5], sampleObj.callCount)
+      assert.equal(sample[6], sampleObj.total)
+      assert.equal(sample[7], sampleObj.min)
+      assert.equal(sample[8], sampleObj.max)
+      end()
     })
+  })
 
-    it('should include the proper priority on transaction end', function (done) {
-      agent.config.distributed_tracing.enabled = true
-      agent.config.primary_application_id = 'test'
-      agent.config.account_id = 1
-      agent.config.simple_compression = true
-      helper.runInTransaction(agent, function (tx) {
-        agent.queries.add(tx.trace.root, 'postgres', 'select pg_sleep(1)', 'FAKE STACK')
-        agent.queries.prepareJSON((err, samples) => {
-          const sample = samples[0]
-          const attributes = sample[sample.length - 1]
-          expect(attributes.traceId).to.equal(tx.traceId)
-          expect(attributes.guid).to.equal(tx.id)
-          expect(attributes.priority).to.equal(tx.priority)
-          expect(attributes.sampled).to.equal(tx.sampled)
-          expect(attributes.parentId).to.be.undefined
-          expect(attributes.parentSpanId).to.be.undefined
-          expect(tx.sampled).to.equal(true)
-          expect(tx.priority).to.be.greaterThan(1)
-          done()
-        })
+  await t.test('should include the proper priority on transaction end', function (t, end) {
+    const { agent } = t.nr
+    agent.config.distributed_tracing.enabled = true
+    agent.config.primary_application_id = 'test'
+    agent.config.account_id = 1
+    agent.config.simple_compression = true
+    helper.runInTransaction(agent, function (tx) {
+      agent.queries.add(tx.trace.root, 'postgres', 'select pg_sleep(1)', 'FAKE STACK')
+      agent.queries.prepareJSON((err, samples) => {
+        const sample = samples[0]
+        const attributes = sample[sample.length - 1]
+        assert.equal(attributes.traceId, tx.traceId)
+        assert.equal(attributes.guid, tx.id)
+        assert.equal(attributes.priority, tx.priority)
+        assert.equal(attributes.sampled, tx.sampled)
+        assert.ok(!attributes.parentId)
+        assert.ok(!attributes.parentSpanId)
+        assert.equal(tx.sampled, true)
+        assert.ok(tx.priority > 1)
+        end()
       })
     })
   })

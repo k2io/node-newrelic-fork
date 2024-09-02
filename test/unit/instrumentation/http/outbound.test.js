@@ -127,6 +127,8 @@ tap.test('instrumentOutbound', (t) => {
       t.same(
         transaction.trace.root.children[0].attributes.get(DESTINATIONS.SPAN_EVENT),
         {
+          'hostname': HOSTNAME,
+          'port': PORT,
           'url': `http://${HOSTNAME}:${PORT}/asdf`,
           'procedure': 'GET',
           'request.parameters.a': 'b',
@@ -272,6 +274,24 @@ tap.test('instrumentOutbound', (t) => {
     }
     t.end()
   })
+
+  t.test('should not crash when req.headers is null', (t) => {
+    const req = new events.EventEmitter()
+    helper.runInTransaction(agent, function () {
+      const path = '/asdf'
+
+      instrumentOutbound(agent, { headers: null, host: HOSTNAME, port: PORT }, makeFakeRequest)
+
+      function makeFakeRequest(opts) {
+        t.ok(opts.headers, 'should assign headers when null')
+        t.ok(opts.headers.traceparent, 'traceparent should exist')
+        req.path = path
+        return req
+      }
+    })
+    t.end()
+  })
+
   t.end()
 })
 

@@ -7,10 +7,11 @@
 
 const tap = require('tap')
 const DatastoreShim = require('../../../lib/shim/datastore-shim')
-const expect = require('chai').expect
 const helper = require('../../lib/agent_helper')
 const https = require('https')
 const SpanEvent = require('../../../lib/spans/span-event')
+const DatastoreParameters = require('../../../lib/shim/specs/params/datastore')
+const { QuerySpec } = require('../../../lib/shim/specs')
 
 tap.test('#constructor() should construct an empty span event', (t) => {
   const attrs = {}
@@ -67,6 +68,8 @@ tap.test('fromSegment()', (t) => {
       setTimeout(() => {
         const segment = agent.tracer.getTransaction().trace.root.children[0]
         segment.addSpanAttribute('SpiderSpan', 'web')
+        segment.addSpanAttribute('host', 'my-host')
+        segment.addSpanAttribute('port', 222)
 
         const spanContext = segment.getSpanContext()
         spanContext.addCustomAttribute('Span Lee', 'no prize')
@@ -90,7 +93,7 @@ tap.test('fromSegment()', (t) => {
         t.equal(span.intrinsics.name, 'timers.setTimeout')
         t.equal(span.intrinsics.timestamp, segment.timer.start)
 
-        expect(span.intrinsics).to.have.property('duration').within(0.03, 0.3)
+        t.ok(span.intrinsics.duration >= 0.03 && span.intrinsics.duration <= 0.3)
 
         // Generic should not have 'span.kind' or 'component'
         t.equal(span.intrinsics['span.kind'], null)
@@ -107,6 +110,8 @@ tap.test('fromSegment()', (t) => {
         const hasOwnAttribute = Object.hasOwnProperty.bind(attributes)
 
         t.ok(hasOwnAttribute('SpiderSpan'), 'Should have attribute added through segment')
+        t.equal(attributes['server.address'], 'my-host')
+        t.equal(attributes['server.port'], 222)
 
         // Should have no http properties.
         t.notOk(hasOwnAttribute('externalLibrary'))
@@ -116,6 +121,7 @@ tap.test('fromSegment()', (t) => {
         // Should have no datastore properties.
         t.notOk(hasOwnAttribute('db.statement'))
         t.notOk(hasOwnAttribute('db.instance'))
+        t.notOk(hasOwnAttribute('db.system'))
         t.notOk(hasOwnAttribute('peer.hostname'))
         t.notOk(hasOwnAttribute('peer.address'))
 
@@ -154,7 +160,7 @@ tap.test('fromSegment()', (t) => {
           t.equal(span.intrinsics.name, 'External/example.com/')
           t.equal(span.intrinsics.timestamp, segment.timer.start)
 
-          expect(span.intrinsics).to.have.property('duration').within(0.01, 2)
+          t.ok(span.intrinsics.duration >= 0.01 && span.intrinsics.duration <= 2)
 
           // Should have type-specific intrinsics
           t.equal(span.intrinsics.component, 'http')
@@ -165,14 +171,25 @@ tap.test('fromSegment()', (t) => {
 
           // Should have (most) http properties.
           t.equal(attributes['http.url'], 'https://example.com/')
+          t.equal(attributes['server.address'], 'example.com')
+          t.equal(attributes['server.port'], 443)
           t.ok(attributes['http.method'])
+          t.ok(attributes['http.request.method'])
           t.equal(attributes['http.statusCode'], 200)
           t.equal(attributes['http.statusText'], 'OK')
+
+          // should nullify mapped properties
+          t.notOk(attributes.library)
+          t.notOk(attributes.url)
+          t.notOk(attributes.hostname)
+          t.notOk(attributes.port)
+          t.notOk(attributes.procedure)
 
           // Should have no datastore properties.
           const hasOwnAttribute = Object.hasOwnProperty.bind(attributes)
           t.notOk(hasOwnAttribute('db.statement'))
           t.notOk(hasOwnAttribute('db.instance'))
+          t.notOk(hasOwnAttribute('db.system'))
           t.notOk(hasOwnAttribute('peer.hostname'))
           t.notOk(hasOwnAttribute('peer.address'))
 
@@ -182,7 +199,7 @@ tap.test('fromSegment()', (t) => {
     })
   })
 
-  t.test('should create an datastore span with an datastore segment', (t) => {
+  t.test('should create a datastore span with a datastore segment', (t) => {
     agent.config.transaction_tracer.record_sql = 'raw'
 
     const shim = new DatastoreShim(agent, 'test-data-store')
@@ -193,16 +210,20 @@ tap.test('fromSegment()', (t) => {
     while (Buffer.byteLength(longQuery, 'utf8') < 2001) {
       longQuery += 'a'
     }
-    shim.recordQuery(dsConn, 'myDbOp', {
-      callback: shim.LAST,
-      query: shim.FIRST,
-      parameters: {
-        host: 'my-db-host',
-        port_path_or_id: '/path/to/db.sock',
-        database_name: 'my-database',
-        collection: 'my-collection'
-      }
-    })
+    shim.recordQuery(
+      dsConn,
+      'myDbOp',
+      new QuerySpec({
+        callback: shim.LAST,
+        query: shim.FIRST,
+        parameters: new DatastoreParameters({
+          host: 'my-db-host',
+          port_path_or_id: '/path/to/db.sock',
+          database_name: 'my-database',
+          collection: 'my-collection'
+        })
+      })
+    )
 
     shim.setParser((query) => {
       return {
@@ -240,7 +261,7 @@ tap.test('fromSegment()', (t) => {
         t.equal(span.intrinsics.name, 'Datastore/statement/TestStore/test/test')
         t.equal(span.intrinsics.timestamp, segment.timer.start)
 
-        expect(span.intrinsics).to.have.property('duration').within(0.03, 0.7)
+        t.ok(span.intrinsics.duration >= 0.03 && span.intrinsics.duration <= 0.7)
 
         // Should have (most) type-specific intrinsics
         t.equal(span.intrinsics.component, 'TestStore')
@@ -253,12 +274,16 @@ tap.test('fromSegment()', (t) => {
         const hasOwnAttribute = Object.hasOwnProperty.bind(attributes)
         t.notOk(hasOwnAttribute('http.url'))
         t.notOk(hasOwnAttribute('http.method'))
+        t.notOk(hasOwnAttribute('http.request.method'))
 
         // Should have (most) datastore properties.
         t.ok(attributes['db.instance'])
         t.equal(attributes['db.collection'], 'my-collection')
         t.equal(attributes['peer.hostname'], 'my-db-host')
         t.equal(attributes['peer.address'], 'my-db-host:/path/to/db.sock')
+        t.equal(attributes['db.system'], 'TestStore') // same as intrinsics.component
+        t.equal(attributes['server.address'], 'my-db-host')
+        t.equal(attributes['server.port'], '/path/to/db.sock')
 
         const statement = attributes['db.statement']
         t.ok(statement)

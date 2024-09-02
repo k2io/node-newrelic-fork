@@ -7,8 +7,9 @@
 
 const tap = require('tap')
 const helper = require('../../lib/agent_helper')
+const { removeMatchedModules } = require('../../lib/cache-buster')
 const concat = require('concat-stream')
-const { validateLogLine } = require('../../lib/logging-helper')
+require('../../lib/logging-helper')
 const { Writable } = require('stream')
 const { LOGGING } = require('../../../lib/metrics/names')
 // winston puts the log line getting construct through formatters on a symbol
@@ -21,8 +22,6 @@ const {
   originalMsgAssertion,
   logForwardingMsgAssertion
 } = require('./helpers')
-
-tap.Test.prototype.addAssert('validateAnnotations', 2, validateLogLine)
 
 tap.test('winston instrumentation', (t) => {
   t.autoend()
@@ -41,11 +40,7 @@ tap.test('winston instrumentation', (t) => {
     winston = null
     // must purge require cache of winston related instrumentation
     // otherwise it will not re-register on subsequent test runs
-    Object.keys(require.cache).forEach((key) => {
-      if (/winston/.test(key)) {
-        delete require.cache[key]
-      }
-    })
+    removeMatchedModules(/winston/)
 
     /**
      * since our nr-winston-transport gets registered
@@ -256,6 +251,34 @@ tap.test('winston instrumentation', (t) => {
 
       // Example Winston setup to test
       const logger = winston.loggers.add('local', {
+        format: winston.format.timestamp('YYYY-MM-DD HH:mm:ss'),
+        transports: [
+          // Log to a stream so we can test the output
+          new winston.transports.Stream({
+            level: 'info',
+            stream: jsonStream
+          })
+        ]
+      })
+
+      logWithAggregator({ logger, stream: jsonStream, t, helper, agent })
+    })
+
+    t.test('should add linking metadata when using logger.configure', (t) => {
+      const handleMessages = makeStreamTest(() => {
+        const msgs = agent.logs.getEvents()
+        t.equal(msgs.length, 2, 'should add both logs to aggregator')
+        msgs.forEach((msg) => {
+          logForwardingMsgAssertion(t, msg, agent)
+          t.ok(msg.original_timestamp, 'should put customer timestamp on original_timestamp')
+        })
+        t.end()
+      })
+      const assertFn = originalMsgAssertion.bind(null, { t, timestamp: true })
+      const jsonStream = concat(handleMessages(assertFn))
+      // Example Winston setup to test
+      const logger = winston.createLogger()
+      logger.configure({
         format: winston.format.timestamp('YYYY-MM-DD HH:mm:ss'),
         transports: [
           // Log to a stream so we can test the output
@@ -520,6 +543,63 @@ tap.test('winston instrumentation', (t) => {
         })
       })
     }
+
+    t.test(`should count logger metrics for logger.configure`, (t) => {
+      setup({
+        application_logging: {
+          enabled: true,
+          metrics: {
+            enabled: true
+          },
+          forwarding: { enabled: false },
+          local_decorating: { enabled: false }
+        }
+      })
+
+      const logger = winston.createLogger()
+      logger.configure({
+        transports: [
+          new winston.transports.Stream({
+            level: 'debug',
+            // We don't care about the output for this test, just
+            // total lines logged
+            stream: nullStream
+          })
+        ]
+      })
+
+      helper.runInTransaction(agent, 'winston-test', () => {
+        const logLevels = {
+          debug: 20,
+          info: 5,
+          warn: 3,
+          error: 2
+        }
+        for (const [logLevel, maxCount] of Object.entries(logLevels)) {
+          for (let count = 0; count < maxCount; count++) {
+            const msg = `This is log message #${count} at ${logLevel} level`
+            logger[logLevel](msg)
+          }
+        }
+
+        // Close the stream so that the logging calls are complete
+        nullStream.end()
+
+        let grandTotal = 0
+        for (const [logLevel, maxCount] of Object.entries(logLevels)) {
+          grandTotal += maxCount
+          const metricName = LOGGING.LEVELS[logLevel.toUpperCase()]
+          const metric = agent.metrics.getMetric(metricName)
+          t.ok(metric, `ensure ${metricName} exists`)
+          t.equal(metric.callCount, maxCount, `ensure ${metricName} has the right value`)
+        }
+        const metricName = LOGGING.LINES
+        const metric = agent.metrics.getMetric(metricName)
+        t.ok(metric, `ensure ${metricName} exists`)
+        t.equal(metric.callCount, grandTotal, `ensure ${metricName} has the right value`)
+        t.end()
+      })
+    })
 
     const configValues = [
       {

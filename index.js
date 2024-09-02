@@ -17,7 +17,6 @@ const featureFlags = require('./lib/feature_flags').prerelease
 const psemver = require('./lib/util/process-version')
 let logger = require('./lib/logger') // Gets re-loaded after initialization.
 const NAMES = require('./lib/metrics/names')
-const isESMSupported = psemver.satisfies('>=16.2.0')
 
 const pkgJSON = require('./package.json')
 logger.info(
@@ -40,7 +39,7 @@ if (require.cache.__NR_cache) {
 }
 
 function initApi({ agent, apiPath }) {
-  const API = require(apiPath)
+  const API = require(`./${apiPath}`)
 
   const api = new API(agent)
   require.cache.__NR_cache = module.exports = api
@@ -63,8 +62,8 @@ function initialize() {
       throw new Error(message)
     }
 
-    // TODO: Update this check when Node v22 support is added
-    if (psemver.satisfies('>=21.0.0')) {
+    // TODO: Update this check when Node v24 support is added
+    if (psemver.satisfies('>=23.0.0')) {
       logger.warn(
         'New Relic for Node.js %s has not been tested on Node.js %s. Please ' +
           'update the agent or downgrade your version of Node.js',
@@ -115,7 +114,7 @@ function initialize() {
     /* eslint-enable no-console */
   }
 
-  const api = agent ? initApi({ agent, apiPath: './api' }) : initApi({ apiPath: './stub_api' })
+  const api = agent ? initApi({ agent, apiPath: 'api' }) : initApi({ apiPath: 'stub_api' })
 
   // If we loaded an agent, record a startup time for the agent.
   // NOTE: Metrics are recorded in seconds, so divide the value by 1000.
@@ -246,15 +245,7 @@ function recordLoaderMetric(agent) {
       (arg === '--loader' || arg === '--experimental-loader') &&
       process.execArgv[index + 1] === 'newrelic/esm-loader.mjs'
     ) {
-      if (isESMSupported) {
-        agent.metrics.getOrCreateMetric(NAMES.FEATURES.ESM.LOADER).incrementCallCount()
-      } else {
-        agent.metrics.getOrCreateMetric(NAMES.FEATURES.ESM.UNSUPPORTED_LOADER)
-        logger.warn(
-          'New Relic for Node.js ESM loader requires a version of Node >= v16.12.0; your version is %s.  Instrumentation will not be registered.',
-          process.version
-        )
-      }
+      agent.metrics.getOrCreateMetric(NAMES.FEATURES.ESM.LOADER).incrementCallCount()
     }
   })
 

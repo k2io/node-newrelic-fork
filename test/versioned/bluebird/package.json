@@ -1,14 +1,15 @@
 {
   "name": "bluebird-tests",
+  "targets": [{"name": "bluebird", "minAgentVersion": "1.27.0" }],
   "version": "0.0.0",
   "private": true,
   "tests": [
     {
       "engines": {
-        "node": ">=16"
+        "node": ">=18"
       },
       "dependencies": {
-        "bluebird": ">=2"
+        "bluebird": ">=2.0.0"
       },
       "files": [
         "regressions.tap.js",
@@ -17,10 +18,10 @@
     },
     {
       "engines": {
-        "node": ">=16"
+        "node": ">=18"
       },
       "dependencies": {
-        "bluebird": ">=3"
+        "bluebird": ">=3.0.0"
       },
       "files": [
         "methods.tap.js"

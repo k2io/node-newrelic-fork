@@ -1,11 +1,12 @@
 {
   "name": "grpc-tests",
+  "targets": [{"name":"@grpc/grpc-js","minAgentVersion":"8.17.0"}],
   "version": "0.0.0",
   "private": true,
   "tests": [
     {
       "engines": {
-        "node": ">=16"
+        "node": ">=18"
       },
       "dependencies": {
         "@grpc/grpc-js": ">=1.4.0 <1.8.0"
@@ -23,7 +24,7 @@
     },
     {
       "engines": {
-        "node": ">=16"
+        "node": ">=18"
       },
       "dependencies": {
         "@grpc/grpc-js": ">=1.8.0"

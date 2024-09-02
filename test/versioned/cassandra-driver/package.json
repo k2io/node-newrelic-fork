@@ -1,11 +1,12 @@
 {
   "name": "cassandra-driver-tests",
+  "targets": [{"name":"cassandra-driver","minAgentVersion": "1.7.1"}],
   "version": "0.0.0",
   "private": true,
   "tests": [
     {
       "engines": {
-        "node": ">=16"
+        "node": ">=18"
       },
       "dependencies": {
         "cassandra-driver": ">=3.4.0"

@@ -1,17 +1,18 @@
 {
   "name": "prisma-tests",
+  "targets": [{"name":"@prisma/client","minAgentVersion":"11.0.0"}],
   "version": "0.0.0",
   "private": true,
   "engines": {
-    "node": ">=16"
+    "node": ">=18"
   },
   "tests": [
     {
       "engines": {
-        "node": ">=16"
+        "node": ">=18"
       },
       "dependencies": {
-        "@prisma/client": ">=5.0.0",
+        "@prisma/client": ">=5.0.0 <5.9.0 || >=5.9.1",
         "prisma": "latest"
       },
       "files": [

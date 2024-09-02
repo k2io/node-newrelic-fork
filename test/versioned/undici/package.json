@@ -1,14 +1,15 @@
 {
   "name": "undici-tests",
+  "targets": [{"name":"undici","minAgentVersion":"11.1.0"}],
   "version": "0.0.0",
   "private": true,
   "tests": [
     {
       "engines": {
-        "node": ">=16"
+        "node": ">=18"
       },
       "dependencies": {
-        "undici": ">=4.7.0"
+        "undici": ">=5.0.0"
       },
       "files": [
         "requests.tap.js"
@@ -16,6 +17,6 @@
     }
   ],
   "engines": {
-    "node": ">=16"
+    "node": ">=18"
   }
 }

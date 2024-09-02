@@ -8,6 +8,7 @@
 const amqpUtils = require('./amqp-utils')
 const API = require('../../../api')
 const helper = require('../../lib/agent_helper')
+const { removeMatchedModules } = require('../../lib/cache-buster')
 const tap = require('tap')
 
 /*
@@ -37,11 +38,7 @@ tap.test('amqplib promise instrumentation', function (t) {
     // which the test itself re-requires, but second-order modules (deps of
     // instrumented methods) are not reloaded and thus not re-instrumented. To
     // resolve this we just delete everything. Kill it all.
-    Object.keys(require.cache).forEach(function (key) {
-      if (/amqplib|bluebird/.test(key)) {
-        delete require.cache[key]
-      }
-    })
+    removeMatchedModules(/amqplib|bluebird/)
 
     agent = helper.instrumentMockedAgent({
       attributes: {
@@ -78,23 +75,20 @@ tap.test('amqplib promise instrumentation', function (t) {
   })
 
   t.test('connect in a transaction', function (t) {
-    helper.runInTransaction(agent, function () {
-      t.doesNotThrow(function () {
-        amqplib.connect(amqpUtils.CON_STRING).then(
-          function (_conn) {
-            _conn.close().then(t.end)
-          },
-          function (err) {
-            t.error(err, 'should not break connection')
-            t.bailout('Can not connect to RabbitMQ, stopping tests.')
-          }
-        )
-      }, 'should not error when connecting')
-
-      // If connect threw, we need to end the test immediately.
-      if (!t.passing()) {
-        t.end()
-      }
+    helper.runInTransaction(agent, function (tx) {
+      amqplib.connect(amqpUtils.CON_STRING).then(
+        function (_conn) {
+          const [segment] = tx.trace.root.children
+          t.equal(segment.name, 'amqplib.connect')
+          const attrs = segment.getAttributes()
+          t.equal(attrs.host, 'localhost')
+          t.equal(attrs.port_path_or_id, 5672)
+          _conn.close().then(t.end)
+        },
+        function (err) {
+          t.error(err, 'should not break connection')
+        }
+      )
     })
   })
 
@@ -238,7 +232,61 @@ tap.test('amqplib promise instrumentation', function (t) {
             })
             .then(function () {
               tx.end()
-              amqpUtils.verifyGet(t, tx, exchange, 'consume-tx-key', queue)
+              amqpUtils.verifyGet({
+                t,
+                tx,
+                exchangeName: exchange,
+                routingKey: 'consume-tx-key',
+                queue,
+                assertAttr: true
+              })
+              t.end()
+            })
+        })
+      })
+      .catch(function (err) {
+        t.fail(err)
+        t.end()
+      })
+  })
+
+  t.test('get a message disable parameters', function (t) {
+    agent.config.message_tracer.segment_parameters.enabled = false
+    let queue = null
+    const exchange = amqpUtils.DIRECT_EXCHANGE
+
+    channel
+      .assertExchange(exchange, 'direct')
+      .then(function () {
+        return channel.assertQueue('', { exclusive: true })
+      })
+      .then(function (res) {
+        queue = res.queue
+        return channel.bindQueue(queue, exchange, 'consume-tx-key')
+      })
+      .then(function () {
+        return helper.runInTransaction(agent, function (tx) {
+          channel.publish(exchange, 'consume-tx-key', Buffer.from('hello'))
+          return channel
+            .get(queue)
+            .then(function (msg) {
+              t.ok(msg, 'should receive a message')
+
+              const body = msg.content.toString('utf8')
+              t.equal(body, 'hello', 'should receive expected body')
+
+              amqpUtils.verifyTransaction(t, tx, 'get')
+              channel.ack(msg)
+            })
+            .then(function () {
+              tx.end()
+              amqpUtils.verifyGet({
+                t,
+                tx,
+                exchangeName: exchange,
+                routingKey: 'consume-tx-key',
+                queue
+              })
               t.end()
             })
         })

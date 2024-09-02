@@ -8,22 +8,18 @@
 const common = require('./common')
 const tap = require('tap')
 const helper = require('../../lib/agent_helper')
-const semver = require('semver')
-const { version: pkgVersion } = require('mongodb/package')
+const mongoPackage = require('mongodb/package.json')
 
 let METRIC_HOST_NAME = null
 let METRIC_HOST_PORT = null
 
-exports.MONGO_SEGMENT_RE = common.MONGO_SEGMENT_RE
-exports.TRANSACTION_NAME = common.TRANSACTION_NAME
-exports.DB_NAME = common.DB_NAME
-
 exports.connect = common.connect
 exports.close = common.close
-exports.populate = populate
 exports.test = collectionTest
-
 exports.dropTestCollections = dropTestCollections
+exports.populate = populate
+exports.pkgVersion = mongoPackage.version
+
 const { COLLECTIONS } = common
 
 function collectionTest(name, run) {
@@ -36,30 +32,25 @@ function collectionTest(name, run) {
 
     t.test('remote connection', function (t) {
       t.autoend()
-      t.beforeEach(function () {
+      t.beforeEach(async function () {
         agent = helper.instrumentMockedAgent()
 
         const mongodb = require('mongodb')
 
-        return dropTestCollections(mongodb)
-          .then(() => {
-            METRIC_HOST_NAME = common.getHostName(agent)
-            METRIC_HOST_PORT = common.getPort()
-            return common.connect(mongodb)
-          })
-          .then((res) => {
-            client = res.client
-            db = res.db
-            collection = db.collection(COLLECTIONS.collection1)
-            return populate(db, collection)
-          })
+        await dropTestCollections(mongodb)
+        METRIC_HOST_NAME = common.getHostName(agent)
+        METRIC_HOST_PORT = common.getPort()
+        const res = await common.connect({ mongodb })
+        client = res.client
+        db = res.db
+        collection = db.collection(COLLECTIONS.collection1)
+        await populate(collection)
       })
 
-      t.afterEach(function () {
-        return common.close(client, db).then(() => {
-          helper.unloadAgent(agent)
-          agent = null
-        })
+      t.afterEach(async function () {
+        await common.close(client, db)
+        helper.unloadAgent(agent)
+        agent = null
       })
 
       t.test('should not error outside of a transaction', function (t) {
@@ -135,7 +126,13 @@ function collectionTest(name, run) {
               }
 
               transaction.end()
-              common.checkMetrics(t, agent, METRIC_HOST_NAME, METRIC_HOST_PORT, metrics || [])
+              common.checkMetrics({
+                t,
+                agent,
+                host: METRIC_HOST_NAME,
+                port: METRIC_HOST_PORT,
+                metrics
+              })
               t.end()
             }
           )
@@ -193,208 +190,106 @@ function collectionTest(name, run) {
       })
     })
 
-    // The domain socket tests should only be run if there is a domain socket
-    // to connect to, which only happens if there is a Mongo instance running on
-    // the same box as these tests.
-    const domainPath = common.getDomainSocketPath()
-    const shouldTestDomain = domainPath
-    t.test('domain socket', { skip: !shouldTestDomain }, function (t) {
+    t.test('replica set string remote connection', function (t) {
       t.autoend()
-      t.beforeEach(function () {
+      t.beforeEach(async function () {
         agent = helper.instrumentMockedAgent()
-        METRIC_HOST_NAME = agent.config.getHostnameSafe()
-        METRIC_HOST_PORT = domainPath
 
         const mongodb = require('mongodb')
 
-        return dropTestCollections(mongodb)
-          .then(() => {
-            return common.connect(mongodb, domainPath)
-          })
-          .then((res) => {
-            client = res.client
-            db = res.db
-            collection = db.collection(COLLECTIONS.collection1)
-            return populate(db, collection)
-          })
+        await dropTestCollections(mongodb)
+        METRIC_HOST_NAME = common.getHostName(agent)
+        METRIC_HOST_PORT = common.getPort()
+        const res = await common.connect({ mongodb, replicaSet: true })
+        client = res.client
+        db = res.db
+        collection = db.collection(COLLECTIONS.collection1)
+        await populate(collection)
       })
 
-      t.afterEach(function () {
-        return common.close(client, db).then(() => {
-          helper.unloadAgent(agent)
-          agent = null
-        })
+      t.afterEach(async function () {
+        await common.close(client, db)
+        helper.unloadAgent(agent)
+        agent = null
       })
 
-      t.test('should have domain socket in metrics', function (t) {
-        t.notOk(agent.getTransaction(), 'should not have transaction')
+      t.test('should generate the correct metrics and segments', function (t) {
         helper.runInTransaction(agent, function (transaction) {
           transaction.name = common.TRANSACTION_NAME
-          run(t, collection, function (err, segments, metrics) {
-            t.error(err)
-            transaction.end()
-            const re = new RegExp('^Datastore/instance/MongoDB/' + domainPath)
-            const badMetrics = Object.keys(agent.metrics._metrics.unscoped).filter(function (m) {
-              return re.test(m)
-            })
-            t.notOk(badMetrics.length, 'should not use domain path as host name')
-            common.checkMetrics(t, agent, METRIC_HOST_NAME, METRIC_HOST_PORT, metrics || [])
-            t.end()
-          })
-        })
-      })
-    })
+          run(
+            t,
+            collection,
+            function (err, segments, metrics, { childrenLength = 1, strict = true } = {}) {
+              if (
+                !t.error(err, 'running test should not error') ||
+                !t.ok(agent.getTransaction(), 'should maintain tx state')
+              ) {
+                return t.end()
+              }
+              t.equal(agent.getTransaction().id, transaction.id, 'should not change transactions')
+              const segment = agent.tracer.getSegment()
+              let current = transaction.trace.root
 
-    t.test('domain socket replica set', { skip: !shouldTestDomain }, function (t) {
-      t.autoend()
-      t.beforeEach(function () {
-        agent = helper.instrumentMockedAgent()
-        METRIC_HOST_NAME = agent.config.getHostnameSafe()
-        METRIC_HOST_PORT = domainPath
+              // this logic is just for the collection.aggregate.
+              // aggregate no longer returns a callback with cursor
+              // it just returns a cursor. so the segments on the
+              // transaction are not nested but both on the trace
+              // root. instead of traversing the children, just
+              // iterate over the expected segments and compare
+              // against the corresponding child on trace root
+              // we also added a strict flag for aggregate because depending on the version
+              // there is an extra segment for the callback of our test which we do not care
+              // to assert
+              if (childrenLength === 2) {
+                t.equal(current.children.length, childrenLength, 'should have one child')
 
-        const mongodb = require('mongodb')
+                segments.forEach((expectedSegment, i) => {
+                  const child = current.children[i]
 
-        return dropTestCollections(mongodb)
-          .then(() => {
-            return common.connect(mongodb, domainPath, true)
-          })
-          .then((res) => {
-            client = res.client
-            db = res.db
-            collection = db.collection(COLLECTIONS.collection1)
-            return populate(db, collection)
-          })
-      })
-
-      t.afterEach(function () {
-        return common.close(client, db).then(() => {
-          helper.unloadAgent(agent)
-          agent = null
-        })
-      })
-
-      t.test('should have domain socket in metrics', function (t) {
-        t.notOk(agent.getTransaction(), 'should not have transaction')
-        helper.runInTransaction(agent, function (transaction) {
-          transaction.name = common.TRANSACTION_NAME
-          run(t, collection, function (err, segments, metrics) {
-            t.error(err)
-            transaction.end()
-            const re = new RegExp('^Datastore/instance/MongoDB/' + domainPath)
-            const badMetrics = Object.keys(agent.metrics._metrics.unscoped).filter(function (m) {
-              return re.test(m)
-            })
-            t.notOk(badMetrics.length, 'should not use domain path as host name')
-            common.checkMetrics(t, agent, METRIC_HOST_NAME, METRIC_HOST_PORT, metrics || [])
-            t.end()
-          })
-        })
-      })
-    })
-
-    // this seems to break in 3.x up to 3.6.0
-    // I think it is because of this https://jira.mongodb.org/browse/NODE-2452
-    if (semver.satisfies(pkgVersion, '>=3.6.0')) {
-      t.test('replica set string remote connection', function (t) {
-        t.autoend()
-        t.beforeEach(function () {
-          agent = helper.instrumentMockedAgent()
-
-          const mongodb = require('mongodb')
-
-          return dropTestCollections(mongodb)
-            .then(() => {
-              METRIC_HOST_NAME = common.getHostName(agent)
-              METRIC_HOST_PORT = common.getPort()
-              return common.connect(mongodb, null, true)
-            })
-            .then((res) => {
-              client = res.client
-              db = res.db
-              collection = db.collection(COLLECTIONS.collection1)
-              return populate(db, collection)
-            })
-        })
-
-        t.afterEach(function () {
-          return common.close(client, db).then(() => {
-            helper.unloadAgent(agent)
-            agent = null
-          })
-        })
-
-        t.test('should generate the correct metrics and segments', function (t) {
-          helper.runInTransaction(agent, function (transaction) {
-            transaction.name = common.TRANSACTION_NAME
-            run(
-              t,
-              collection,
-              function (err, segments, metrics, { childrenLength = 1, strict = true } = {}) {
-                if (
-                  !t.error(err, 'running test should not error') ||
-                  !t.ok(agent.getTransaction(), 'should maintain tx state')
-                ) {
-                  return t.end()
-                }
-                t.equal(agent.getTransaction().id, transaction.id, 'should not change transactions')
-                const segment = agent.tracer.getSegment()
-                let current = transaction.trace.root
-
-                // this logic is just for the collection.aggregate.
-                // aggregate no longer returns a callback with cursor
-                // it just returns a cursor. so the segments on the
-                // transaction are not nested but both on the trace
-                // root. instead of traversing the children, just
-                // iterate over the expected segments and compare
-                // against the corresponding child on trace root
-                // we also added a strict flag for aggregate because depending on the version
-                // there is an extra segment for the callback of our test which we do not care
-                // to assert
-                if (childrenLength === 2) {
-                  t.equal(current.children.length, childrenLength, 'should have one child')
-
-                  segments.forEach((expectedSegment, i) => {
-                    const child = current.children[i]
-
-                    t.equal(child.name, expectedSegment, `child should be named ${expectedSegment}`)
-                    if (common.MONGO_SEGMENT_RE.test(child.name)) {
-                      checkSegmentParams(t, child)
-                      t.equal(child.ignore, false, 'should not ignore segment')
-                    }
-
-                    if (strict) {
-                      t.equal(child.children.length, 0, 'should have no more children')
-                    }
-                  })
-                } else {
-                  for (let i = 0, l = segments.length; i < l; ++i) {
-                    t.equal(current.children.length, childrenLength, 'should have one child')
-                    current = current.children[0]
-                    t.equal(current.name, segments[i], 'child should be named ' + segments[i])
-                    if (common.MONGO_SEGMENT_RE.test(current.name)) {
-                      checkSegmentParams(t, current)
-                      t.equal(current.ignore, false, 'should not ignore segment')
-                    }
+                  t.equal(child.name, expectedSegment, `child should be named ${expectedSegment}`)
+                  if (common.MONGO_SEGMENT_RE.test(child.name)) {
+                    checkSegmentParams(t, child)
+                    t.equal(child.ignore, false, 'should not ignore segment')
                   }
 
                   if (strict) {
-                    t.equal(current.children.length, 0, 'should have no more children')
+                    t.equal(child.children.length, 0, 'should have no more children')
+                  }
+                })
+              } else {
+                for (let i = 0, l = segments.length; i < l; ++i) {
+                  t.equal(current.children.length, childrenLength, 'should have one child')
+                  current = current.children[0]
+                  t.equal(current.name, segments[i], 'child should be named ' + segments[i])
+                  if (common.MONGO_SEGMENT_RE.test(current.name)) {
+                    checkSegmentParams(t, current)
+                    t.equal(current.ignore, false, 'should not ignore segment')
                   }
                 }
 
                 if (strict) {
-                  t.ok(current === segment, 'should test to the current segment')
+                  t.equal(current.children.length, 0, 'should have no more children')
                 }
-
-                transaction.end()
-                common.checkMetrics(t, agent, METRIC_HOST_NAME, METRIC_HOST_PORT, metrics || [])
-                t.end()
               }
-            )
-          })
+
+              if (strict) {
+                t.ok(current === segment, 'should test to the current segment')
+              }
+
+              transaction.end()
+              common.checkMetrics({
+                t,
+                agent,
+                host: METRIC_HOST_NAME,
+                port: METRIC_HOST_PORT,
+                metrics
+              })
+              t.end()
+            }
+          )
         })
       })
-    }
+    })
   })
 }
 
@@ -410,29 +305,20 @@ function checkSegmentParams(t, segment) {
   t.equal(attributes.port_path_or_id, METRIC_HOST_PORT, 'should have correct port')
 }
 
-function populate(db, collection) {
-  return new Promise((resolve, reject) => {
-    const items = []
-    for (let i = 0; i < 30; ++i) {
-      items.push({
-        i: i,
-        next3: [i + 1, i + 2, i + 3],
-        data: Math.random().toString(36).slice(2),
-        mod10: i % 10,
-        // spiral out
-        loc: [i % 4 && (i + 1) % 4 ? i : -i, (i + 1) % 4 && (i + 2) % 4 ? i : -i]
-      })
-    }
-
-    db.collection(COLLECTIONS.collection2).drop(function () {
-      collection.deleteMany({}, function (err) {
-        if (err) {
-          reject(err)
-        }
-        collection.insert(items, resolve)
-      })
+async function populate(collection) {
+  const items = []
+  for (let i = 0; i < 30; ++i) {
+    items.push({
+      i: i,
+      next3: [i + 1, i + 2, i + 3],
+      data: Math.random().toString(36).slice(2),
+      mod10: i % 10,
+      // spiral out
+      loc: [i % 4 && (i + 1) % 4 ? i : -i, (i + 1) % 4 && (i + 2) % 4 ? i : -i]
     })
-  })
+  }
+
+  await collection.insertMany(items)
 }
 
 /**
@@ -442,7 +328,7 @@ function populate(db, collection) {
  */
 async function dropTestCollections(mongodb) {
   const collections = Object.values(COLLECTIONS)
-  const { client, db } = await common.connect(mongodb)
+  const { client, db } = await common.connect({ mongodb })
 
   const dropCollectionPromises = collections.map(async (collection) => {
     try {

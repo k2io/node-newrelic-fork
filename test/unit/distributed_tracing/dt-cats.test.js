@@ -4,12 +4,8 @@
  */
 
 'use strict'
-
-// TODO: convert to normal tap style.
-// Below allows use of mocha DSL with tap runner.
-require('tap').mochaGlobals()
-
-const expect = require('chai').expect
+const test = require('node:test')
+const assert = require('node:assert')
 const Exception = require('../../../lib/errors').Exception
 const helper = require('../../lib/agent_helper')
 const recorder = require('../../../lib/metrics/recorders/distributed-trace')
@@ -19,20 +15,21 @@ const recordSupportability = require('../../../lib/agent').prototype.recordSuppo
 
 const testCases = require('../../lib/cross_agent_tests/distributed_tracing/distributed_tracing.json')
 
-describe('distributed tracing', function () {
-  let agent
-
-  beforeEach(() => {
-    agent = helper.loadMockedAgent({ distributed_tracing: { enabled: true } })
+test('distributed tracing', async function (t) {
+  t.beforeEach((ctx) => {
+    ctx.nr = {}
+    const agent = helper.loadMockedAgent({ distributed_tracing: { enabled: true } })
     agent.recordSupportability = recordSupportability
+    ctx.nr.agent = agent
   })
 
-  afterEach(() => {
-    helper.unloadAgent(agent)
+  t.afterEach((ctx) => {
+    helper.unloadAgent(ctx.nr.agent)
   })
 
-  testCases.forEach((testCase) => {
-    it(testCase.test_name, (done) => {
+  for (const testCase of testCases) {
+    await t.test(testCase.test_name, (ctx, end) => {
+      const { agent } = ctx.nr
       agent.config.trusted_account_key = testCase.trusted_account_key
       agent.config.account_id = testCase.account_id
       agent.config.primary_application_id = 'test app'
@@ -75,21 +72,21 @@ describe('distributed tracing', function () {
             Object.keys(exact).forEach((key) => {
               const match = keyRegex.exec(key)
               if (match) {
-                expect(created.d[match[1]]).to.equal(exact[key])
+                assert.equal(created.d[match[1]], exact[key])
               } else {
-                expect(created.v).to.have.ordered.members(exact.v)
+                assert.deepStrictEqual(created.v, exact.v)
               }
             })
 
             if (outbound.expected) {
               outbound.expected.forEach((key) => {
-                expect(created.d).to.have.property(keyRegex.exec(key)[1])
+                assert.ok(created.d.hasOwnProperty(keyRegex.exec(key)[1]))
               })
             }
 
             if (outbound.unexpected) {
               outbound.unexpected.forEach((key) => {
-                expect(created.d).to.not.have.property(keyRegex.exec(key)[1])
+                assert.ok(!created.d.hasOwnProperty(keyRegex.exec(key)[1]))
               })
             }
           })
@@ -99,7 +96,7 @@ describe('distributed tracing', function () {
         tx.end()
         const intrinsics = testCase.intrinsics
         intrinsics.target_events.forEach((type) => {
-          expect(type).to.be.oneOf(['Transaction', 'TransactionError', 'Span'])
+          assert.ok(['Transaction', 'TransactionError', 'Span'].includes(type))
 
           const common = intrinsics.common
           const specific = intrinsics[type] || {}
@@ -120,7 +117,7 @@ describe('distributed tracing', function () {
           const arbitrary = (specific.expected || []).concat(common.expected || [])
           const unexpected = (specific.unexpected || []).concat(common.unexpected || [])
 
-          expect(toCheck).to.have.length.above(0)
+          assert.ok(toCheck.length > 0)
           toCheck.forEach((event) => {
             // Span events are not payload-formatted straight out of the
             // aggregator.
@@ -130,13 +127,13 @@ describe('distributed tracing', function () {
 
             const attributes = event[0]
             arbitrary.forEach((key) => {
-              expect(attributes, `${type} should have ${key}`).to.have.property(key)
+              assert.ok(attributes[`${key}`], `${type} should have ${key}`)
             })
             unexpected.forEach((key) => {
-              expect(attributes, `${type} should not have ${key}`).to.not.have.property(key)
+              assert.ok(!attributes[`${key}`], `${type} should not have ${key}`)
             })
             Object.keys(exact).forEach((key) => {
-              expect(attributes[key], `${type} should have equal ${key}`).to.equal(exact[key])
+              assert.equal(attributes[key], exact[key], `${type} should have equal ${key}`)
             })
           })
         })
@@ -146,12 +143,10 @@ describe('distributed tracing', function () {
           const metricName = metricPair[0]
           const callCount = metrics.getOrCreateMetric(metricName).callCount
           const metricCount = metricPair[1]
-          expect(callCount, `${metricName} should have ${metricCount} samples`).to.equal(
-            metricCount
-          )
+          assert.equal(callCount, metricCount, `${metricName} should have ${metricCount} samples`)
         })
-        done()
+        end()
       })
     })
-  })
+  }
 })

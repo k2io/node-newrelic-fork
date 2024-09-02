@@ -4,60 +4,62 @@
  */
 
 'use strict'
-
-// TODO: convert to normal tap style.
-// Below allows use of mocha DSL with tap runner.
-require('tap').mochaGlobals()
-
-const expect = require('chai').expect
+const test = require('node:test')
+const assert = require('node:assert')
 const CustomEventAggregator = require('../../../lib/custom-events/custom-event-aggregator')
 const Metrics = require('../../../lib/metrics')
+const NAMES = require('../../../lib/metrics/names')
+const sinon = require('sinon')
 
 const RUN_ID = 1337
 const LIMIT = 5
 const EXPECTED_METHOD = 'custom_event_data'
 
-describe('Custom Event Aggregator', () => {
-  let eventAggregator
-
-  beforeEach(() => {
-    eventAggregator = new CustomEventAggregator(
+test('Custom Event Aggregator', async (t) => {
+  t.beforeEach((ctx) => {
+    ctx.nr = {}
+    ctx.nr.eventAggregator = new CustomEventAggregator(
       {
         runId: RUN_ID,
-        limit: LIMIT
+        limit: LIMIT,
+        metricNames: NAMES.CUSTOM_EVENTS
       },
-      {},
-      new Metrics(5, {}, {})
+      {
+        collector: {},
+        metrics: new Metrics(5, {}, {}),
+        harvester: { add: sinon.stub() }
+      }
     )
   })
 
-  afterEach(() => {
-    eventAggregator = null
+  t.afterEach((ctx) => {
+    ctx.nr.eventAggregator = null
   })
 
-  it('should set the correct default method', () => {
+  await t.test('should set the correct default method', (ctx) => {
+    const { eventAggregator } = ctx.nr
     const method = eventAggregator.method
-
-    expect(method).to.equal(EXPECTED_METHOD)
+    assert.equal(method, EXPECTED_METHOD)
   })
 
-  it('toPayloadSync() should return json format of data', () => {
+  await t.test('toPayloadSync() should return json format of data', (ctx) => {
+    const { eventAggregator } = ctx.nr
     const rawEvent = [{ type: 'Custom' }, { foo: 'bar' }]
 
     eventAggregator.add(rawEvent)
 
     const payload = eventAggregator._toPayloadSync()
-    expect(payload.length).to.equal(2)
+    assert.equal(payload.length, 2)
 
     const [runId, eventData] = payload
 
-    expect(runId).to.equal(RUN_ID)
-    expect(eventData).to.deep.equal([rawEvent])
+    assert.equal(runId, RUN_ID)
+    assert.deepStrictEqual(eventData, [rawEvent])
   })
 
-  it('toPayloadSync() should return nothing with no event data', () => {
+  await t.test('toPayloadSync() should return nothing with no event data', (ctx) => {
+    const { eventAggregator } = ctx.nr
     const payload = eventAggregator._toPayloadSync()
-
-    expect(payload).to.not.exist
+    assert.equal(payload, null)
   })
 })

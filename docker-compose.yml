@@ -1,8 +1,8 @@
-version: "3"
 services:
+
   elasticsearch:
     container_name: nr_node_elastic
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.7.1
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.8.0
     environment:
       - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
       # Set cluster to single node
@@ -21,15 +21,48 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
+
+  # Kafka setup based on the e2e tests in node-rdkafka. Needs both the
+  # `zookeeper` and `kafka` services.
+  zookeeper:
+    container_name: nr_node_kafka_zookeeper
+    image: confluentinc/cp-zookeeper
+    ports:
+      - '2181:2181'
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+  kafka:
+    container_name: nr_node_kafka
+    image: confluentinc/cp-kafka
+    links:
+      - zookeeper
+    ports:
+      - '9092:9092'
+    healthcheck:
+      test: /usr/bin/kafka-cluster cluster-id --bootstrap-server localhost:9092 || exit 1
+      interval: 1s
+      timeout: 60s
+      retries: 60
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://localhost:9092'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
   memcached:
     container_name: nr_node_memcached
     image: memcached
     ports:
       - "11211:11211"
-  mongodb_3:
-    container_name: nr_node_mongodb
-    platform: linux/amd64
-    image: library/mongo:3
+
+  mongodb_5:
+    container_name: nr_node_mongodb_5
+    image: library/mongo:5
     ports:
       - "27017:27017"
     healthcheck:
@@ -37,20 +70,18 @@ services:
       interval: 1s
       timeout: 10s
       retries: 30
-  mongodb_5:
-    container_name: nr_node_mongodb_5
-    image: library/mongo:5
-    ports:
-      - "27018:27017"
-    healthcheck:
-      test: ["CMD", "mongo", "--quiet"]
-      interval: 1s
-      timeout: 10s
-      retries: 30
+
   mysql:
     container_name: nr_node_mysql
-    platform: linux/amd64
-    image: mysql:5
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    # We cannot use an image later than 8.3 because they have fully removed
+    # the configuration option we need in order to switch back to the native
+    # authentication method. We must use the native authentication method
+    # because the `mysql` package does not support the `caching_sha2_password`
+    # authentication method.
+    image: mysql:8.3
+    volumes:
+      - "./docker/mysql:/etc/mysql/conf.d"
     ports:
       - "3306:3306"
     environment:
@@ -60,33 +91,48 @@ services:
       interval: 1s
       timeout: 10s
       retries: 30
+
   redis:
     container_name: nr_node_redis
-    image: redis
+    image: bitnami/redis
     ports:
       - "6379:6379"
+      - "6380:6380"
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+      - REDIS_TLS_ENABLED=yes
+      - REDIS_TLS_PORT=6380
+      - REDIS_TLS_CERT_FILE=/tls/redis.crt
+      - REDIS_TLS_KEY_FILE=/tls/redis.key
+      - REDIS_TLS_CA_FILE=/tls/ca.crt
+      - REDIS_TLS_AUTH_CLIENTS=no
+    volumes:
+      - "./docker/redis:/tls"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 1s
       timeout: 10s
       retries: 30
+
   cassandra:
     container_name: nr_node_cassandra
-    platform: linux/amd64
-    image: zmarcantel/cassandra
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    image: cassandra
     ports:
       - "9042:9042"
     healthcheck:
       test: [ "CMD", "cqlsh", "-u cassandra", "-p cassandra"]
       interval: 5s
       timeout: 10s
-      retries: 6 
+      retries: 20
+
   # pg 9.2 has built in healthcheck
   pg:
     container_name: nr_node_postgres
     image: postgres:9.2
     ports:
       - "5432:5432"
+
   pg_prisma:
     container_name: nr_node_postgres_prisma
     image: postgres:15
@@ -100,6 +146,7 @@ services:
       interval: 1s
       timeout: 10s
       retries: 30
+
   rmq:
     container_name: nr_node_rabbit
     image: rabbitmq:3

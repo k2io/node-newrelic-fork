@@ -3,15 +3,25 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import semver from 'semver'
 import helper from '../../lib/agent_helper.js'
 import NAMES from '../../../lib/metrics/names.js'
-import { assertMetrics, assertSegments } from '../../lib/metrics_helper.js'
+import { findSegment } from '../../lib/metrics_helper.js'
 import { test } from 'tap'
 import expressHelpers from './helpers.mjs'
 const { setup, makeRequestAndFinishTransaction } = expressHelpers
 const assertSegmentsOptions = {
-  exact: true
+  exact: true,
+  // in Node 8 the http module sometimes creates a setTimeout segment
+  // the query and expressInit middleware are registered under the hood up until express 5
+  exclude: [NAMES.EXPRESS.MIDDLEWARE + 'query', NAMES.EXPRESS.MIDDLEWARE + 'expressInit']
 }
+// import expressPkg from 'express/package.json' assert {type: 'json'}
+// const pkgVersion = expressPkg.version
+import { readFileSync } from 'node:fs'
+const { version: pkgVersion } = JSON.parse(readFileSync('./node_modules/express/package.json'))
+// TODO: change to 5.0.0 when officially released
+const isExpress5 = semver.gte(pkgVersion, '5.0.0-beta.3')
 
 test('transaction segments tests', (t) => {
   t.autoend()
@@ -33,15 +43,9 @@ test('transaction segments tests', (t) => {
     })
 
     const { rootSegment, transaction } = await runTest({ app, t })
-    checkSegments(
-      t,
+    t.assertSegments(
       rootSegment,
-      [
-        NAMES.EXPRESS.MIDDLEWARE + 'query',
-        NAMES.EXPRESS.MIDDLEWARE + 'expressInit',
-        'Expressjs/Route Path: /test',
-        [NAMES.EXPRESS.MIDDLEWARE + '<anonymous>']
-      ],
+      ['Expressjs/Route Path: /test', [NAMES.EXPRESS.MIDDLEWARE + '<anonymous>']],
       assertSegmentsOptions
     )
 
@@ -69,15 +73,9 @@ test('transaction segments tests', (t) => {
     })
 
     const { rootSegment, transaction } = await runTest({ app, t })
-    checkSegments(
-      t,
+    t.assertSegments(
       rootSegment,
-      [
-        NAMES.EXPRESS.MIDDLEWARE + 'query',
-        NAMES.EXPRESS.MIDDLEWARE + 'expressInit',
-        'Expressjs/Route Path: /test',
-        [NAMES.EXPRESS.MIDDLEWARE + '<anonymous>']
-      ],
+      ['Expressjs/Route Path: /test', [NAMES.EXPRESS.MIDDLEWARE + '<anonymous>']],
       assertSegmentsOptions
     )
 
@@ -92,15 +90,9 @@ test('transaction segments tests', (t) => {
     })
 
     const { rootSegment, transaction } = await runTest({ app, t })
-    checkSegments(
-      t,
+    t.assertSegments(
       rootSegment,
-      [
-        NAMES.EXPRESS.MIDDLEWARE + 'query',
-        NAMES.EXPRESS.MIDDLEWARE + 'expressInit',
-        'Expressjs/Route Path: /test',
-        [NAMES.EXPRESS.MIDDLEWARE + 'myHandler']
-      ],
+      ['Expressjs/Route Path: /test', [NAMES.EXPRESS.MIDDLEWARE + 'myHandler']],
       assertSegmentsOptions
     )
 
@@ -114,9 +106,12 @@ test('transaction segments tests', (t) => {
       res.send()
     })
 
-    const { rootSegment, transaction } = await runTest({ app, t, endpoint: '/test/1' })
-    const routeSegment = rootSegment.children[2]
-    t.equal(routeSegment.name, NAMES.EXPRESS.MIDDLEWARE + 'handler//test/:id')
+    const { transaction } = await runTest({ app, t, endpoint: '/test/1' })
+    const routeSegment = findSegment(
+      transaction.trace.root,
+      NAMES.EXPRESS.MIDDLEWARE + 'handler//test/:id'
+    )
+    t.ok(routeSegment)
 
     checkMetrics(
       t,
@@ -140,12 +135,9 @@ test('transaction segments tests', (t) => {
     )
 
     const { rootSegment, transaction } = await runTest({ app, t })
-    checkSegments(
-      t,
+    t.assertSegments(
       rootSegment,
       [
-        NAMES.EXPRESS.MIDDLEWARE + 'query',
-        NAMES.EXPRESS.MIDDLEWARE + 'expressInit',
         'Expressjs/Route Path: /test',
         [NAMES.EXPRESS.MIDDLEWARE + 'handler1', NAMES.EXPRESS.MIDDLEWARE + 'handler2']
       ],
@@ -169,12 +161,9 @@ test('transaction segments tests', (t) => {
     app.use('/router1', router)
 
     const { rootSegment, transaction } = await runTest({ app, t, endpoint: '/router1/test' })
-    checkSegments(
-      t,
+    t.assertSegments(
       rootSegment,
       [
-        NAMES.EXPRESS.MIDDLEWARE + 'query',
-        NAMES.EXPRESS.MIDDLEWARE + 'expressInit',
         'Expressjs/Router: /router1',
         ['Expressjs/Route Path: /test', [NAMES.EXPRESS.MIDDLEWARE + '<anonymous>']]
       ],
@@ -205,12 +194,9 @@ test('transaction segments tests', (t) => {
     app.use('/', router2)
 
     const { rootSegment, transaction } = await runTest({ app, t })
-    checkSegments(
-      t,
+    t.assertSegments(
       rootSegment,
       [
-        NAMES.EXPRESS.MIDDLEWARE + 'query',
-        NAMES.EXPRESS.MIDDLEWARE + 'expressInit',
         'Expressjs/Router: /',
         'Expressjs/Router: /',
         ['Expressjs/Route Path: /test', [NAMES.EXPRESS.MIDDLEWARE + '<anonymous>']]
@@ -229,16 +215,14 @@ test('transaction segments tests', (t) => {
       res.send('test')
     })
 
-    app.get('*', router1)
+    const path = isExpress5 ? '(.*)' : '*'
+    app.get(path, router1)
 
     const { rootSegment, transaction } = await runTest({ app, t })
-    checkSegments(
-      t,
+    t.assertSegments(
       rootSegment,
       [
-        NAMES.EXPRESS.MIDDLEWARE + 'query',
-        NAMES.EXPRESS.MIDDLEWARE + 'expressInit',
-        'Expressjs/Route Path: /*',
+        `Expressjs/Route Path: /${path}`,
         [
           'Expressjs/Router: /',
           ['Expressjs/Route Path: /test', [NAMES.EXPRESS.MIDDLEWARE + 'testHandler']]
@@ -250,8 +234,8 @@ test('transaction segments tests', (t) => {
     checkMetrics(
       t,
       transaction.metrics,
-      [NAMES.EXPRESS.MIDDLEWARE + 'testHandler//*/test'],
-      '/*/test'
+      [`${NAMES.EXPRESS.MIDDLEWARE}testHandler//${path}/test`],
+      `/${path}/test`
     )
   })
 
@@ -266,12 +250,9 @@ test('transaction segments tests', (t) => {
     app.use('/router1', router)
 
     const { rootSegment, transaction } = await runTest({ app, t, endpoint: '/router1/test' })
-    checkSegments(
-      t,
+    t.assertSegments(
       rootSegment,
       [
-        NAMES.EXPRESS.MIDDLEWARE + 'query',
-        NAMES.EXPRESS.MIDDLEWARE + 'expressInit',
         'Expressjs/Router: /router1',
         ['Expressjs/Route Path: /test', [NAMES.EXPRESS.MIDDLEWARE + '<anonymous>']]
       ],
@@ -297,36 +278,26 @@ test('transaction segments tests', (t) => {
     app.use('/subapp1', subapp)
 
     const { rootSegment, transaction } = await runTest({ app, t, endpoint: '/subapp1/test' })
-    checkSegments(
-      t,
+    // express 5 no longer handles child routers as mounted applications
+    const firstSegment = isExpress5
+      ? NAMES.EXPRESS.MIDDLEWARE + 'app//subapp1'
+      : 'Expressjs/Mounted App: /subapp1'
+
+    t.assertSegments(
       rootSegment,
-      [
-        NAMES.EXPRESS.MIDDLEWARE + 'query',
-        NAMES.EXPRESS.MIDDLEWARE + 'expressInit',
-        'Expressjs/Mounted App: /subapp1',
-        [
-          NAMES.EXPRESS.MIDDLEWARE + 'query',
-          NAMES.EXPRESS.MIDDLEWARE + 'expressInit',
-          'Expressjs/Route Path: /test',
-          [NAMES.EXPRESS.MIDDLEWARE + '<anonymous>']
-        ]
-      ],
+      [firstSegment, ['Expressjs/Route Path: /test', [NAMES.EXPRESS.MIDDLEWARE + '<anonymous>']]],
       assertSegmentsOptions
     )
 
     checkMetrics(
       t,
       transaction.metrics,
-      [
-        NAMES.EXPRESS.MIDDLEWARE + 'query//subapp1',
-        NAMES.EXPRESS.MIDDLEWARE + 'expressInit//subapp1',
-        NAMES.EXPRESS.MIDDLEWARE + '<anonymous>//subapp1/test'
-      ],
+      [NAMES.EXPRESS.MIDDLEWARE + '<anonymous>//subapp1/test'],
       '/subapp1/test'
     )
   })
 
-  t.test('segments for sub-app', async function (t) {
+  t.test('segments for sub-app router', async function (t) {
     const { app, express } = await setup()
 
     const subapp = express()
@@ -346,16 +317,16 @@ test('transaction segments tests', (t) => {
     app.use('/subapp1', subapp)
 
     const { rootSegment, transaction } = await runTest({ app, t, endpoint: '/subapp1/test' })
-    checkSegments(
-      t,
+    // express 5 no longer handles child routers as mounted applications
+    const firstSegment = isExpress5
+      ? NAMES.EXPRESS.MIDDLEWARE + 'app//subapp1'
+      : 'Expressjs/Mounted App: /subapp1'
+
+    t.assertSegments(
       rootSegment,
       [
-        NAMES.EXPRESS.MIDDLEWARE + 'query',
-        NAMES.EXPRESS.MIDDLEWARE + 'expressInit',
-        'Expressjs/Mounted App: /subapp1',
+        firstSegment,
         [
-          NAMES.EXPRESS.MIDDLEWARE + 'query',
-          NAMES.EXPRESS.MIDDLEWARE + 'expressInit',
           'Expressjs/Route Path: /test',
           [NAMES.EXPRESS.MIDDLEWARE + '<anonymous>', NAMES.EXPRESS.MIDDLEWARE + '<anonymous>'],
           'Expressjs/Route Path: /test',
@@ -368,11 +339,7 @@ test('transaction segments tests', (t) => {
     checkMetrics(
       t,
       transaction.metrics,
-      [
-        NAMES.EXPRESS.MIDDLEWARE + 'query//subapp1',
-        NAMES.EXPRESS.MIDDLEWARE + 'expressInit//subapp1',
-        NAMES.EXPRESS.MIDDLEWARE + '<anonymous>//subapp1/test'
-      ],
+      [NAMES.EXPRESS.MIDDLEWARE + '<anonymous>//subapp1/test'],
       '/subapp1/test'
     )
   })
@@ -388,31 +355,21 @@ test('transaction segments tests', (t) => {
     app.use('/subapp1', subapp)
 
     const { rootSegment, transaction } = await runTest({ app, t, endpoint: '/subapp1/test' })
-    checkSegments(
-      t,
+    // express 5 no longer handles child routers as mounted applications
+    const firstSegment = isExpress5
+      ? NAMES.EXPRESS.MIDDLEWARE + 'app//subapp1'
+      : 'Expressjs/Mounted App: /subapp1'
+
+    t.assertSegments(
       rootSegment,
-      [
-        NAMES.EXPRESS.MIDDLEWARE + 'query',
-        NAMES.EXPRESS.MIDDLEWARE + 'expressInit',
-        'Expressjs/Mounted App: /subapp1',
-        [
-          NAMES.EXPRESS.MIDDLEWARE + 'query',
-          NAMES.EXPRESS.MIDDLEWARE + 'expressInit',
-          'Expressjs/Route Path: /:app',
-          [NAMES.EXPRESS.MIDDLEWARE + '<anonymous>']
-        ]
-      ],
+      [firstSegment, ['Expressjs/Route Path: /:app', [NAMES.EXPRESS.MIDDLEWARE + '<anonymous>']]],
       assertSegmentsOptions
     )
 
     checkMetrics(
       t,
       transaction.metrics,
-      [
-        NAMES.EXPRESS.MIDDLEWARE + 'query//subapp1',
-        NAMES.EXPRESS.MIDDLEWARE + 'expressInit//subapp1',
-        NAMES.EXPRESS.MIDDLEWARE + '<anonymous>//subapp1/:app'
-      ],
+      [NAMES.EXPRESS.MIDDLEWARE + '<anonymous>//subapp1/:app'],
       '/subapp1/:app'
     )
   })
@@ -433,22 +390,16 @@ test('transaction segments tests', (t) => {
       t,
       endpoint: '/router1/subapp1/test'
     })
-    checkSegments(
-      t,
+    // express 5 no longer handles child routers as mounted applications
+    const subAppSegment = isExpress5
+      ? NAMES.EXPRESS.MIDDLEWARE + 'app//subapp1'
+      : 'Expressjs/Mounted App: /subapp1'
+
+    t.assertSegments(
       rootSegment,
       [
-        NAMES.EXPRESS.MIDDLEWARE + 'query',
-        NAMES.EXPRESS.MIDDLEWARE + 'expressInit',
         'Expressjs/Router: /router1',
-        [
-          'Expressjs/Mounted App: /subapp1',
-          [
-            NAMES.EXPRESS.MIDDLEWARE + 'query',
-            NAMES.EXPRESS.MIDDLEWARE + 'expressInit',
-            'Expressjs/Route Path: /test',
-            [NAMES.EXPRESS.MIDDLEWARE + '<anonymous>']
-          ]
-        ]
+        [subAppSegment, ['Expressjs/Route Path: /test', [NAMES.EXPRESS.MIDDLEWARE + '<anonymous>']]]
       ],
       assertSegmentsOptions
     )
@@ -456,11 +407,7 @@ test('transaction segments tests', (t) => {
     checkMetrics(
       t,
       transaction.metrics,
-      [
-        NAMES.EXPRESS.MIDDLEWARE + 'query//router1/subapp1',
-        NAMES.EXPRESS.MIDDLEWARE + 'expressInit//router1/subapp1',
-        NAMES.EXPRESS.MIDDLEWARE + '<anonymous>//router1/subapp1/test'
-      ],
+      [NAMES.EXPRESS.MIDDLEWARE + '<anonymous>//router1/subapp1/test'],
       '/router1/subapp1/test'
     )
   })
@@ -473,14 +420,9 @@ test('transaction segments tests', (t) => {
     })
 
     const { rootSegment, transaction } = await runTest({ app, t })
-    checkSegments(
-      t,
+    t.assertSegments(
       rootSegment,
-      [
-        NAMES.EXPRESS.MIDDLEWARE + 'query',
-        NAMES.EXPRESS.MIDDLEWARE + 'expressInit',
-        NAMES.EXPRESS.MIDDLEWARE + 'myHandler//test'
-      ],
+      [NAMES.EXPRESS.MIDDLEWARE + 'myHandler//test'],
       assertSegmentsOptions
     )
 
@@ -499,12 +441,9 @@ test('transaction segments tests', (t) => {
     })
 
     const { rootSegment, transaction } = await runTest({ app, t })
-    checkSegments(
-      t,
+    t.assertSegments(
       rootSegment,
       [
-        NAMES.EXPRESS.MIDDLEWARE + 'query',
-        NAMES.EXPRESS.MIDDLEWARE + 'expressInit',
         'Expressjs/Route Path: /test',
         [NAMES.EXPRESS.MIDDLEWARE + '<anonymous>'],
         NAMES.EXPRESS.MIDDLEWARE + 'myErrorHandler'
@@ -541,12 +480,9 @@ test('transaction segments tests', (t) => {
     const endpoint = '/router/test'
 
     const { rootSegment, transaction } = await runTest({ app, t, endpoint })
-    checkSegments(
-      t,
+    t.assertSegments(
       rootSegment,
       [
-        NAMES.EXPRESS.MIDDLEWARE + 'query',
-        NAMES.EXPRESS.MIDDLEWARE + 'expressInit',
         'Expressjs/Router: /router',
         [
           'Expressjs/Route Path: /test',
@@ -588,12 +524,9 @@ test('transaction segments tests', (t) => {
     const endpoint = '/router1/router2/test'
 
     const { rootSegment, transaction } = await runTest({ app, t, endpoint })
-    checkSegments(
-      t,
+    t.assertSegments(
       rootSegment,
       [
-        NAMES.EXPRESS.MIDDLEWARE + 'query',
-        NAMES.EXPRESS.MIDDLEWARE + 'expressInit',
         'Expressjs/Router: /router1',
         [
           'Expressjs/Router: /router2',
@@ -635,12 +568,9 @@ test('transaction segments tests', (t) => {
     const endpoint = '/router/test'
 
     const { rootSegment, transaction } = await runTest({ app, t, endpoint })
-    checkSegments(
-      t,
+    t.assertSegments(
       rootSegment,
       [
-        NAMES.EXPRESS.MIDDLEWARE + 'query',
-        NAMES.EXPRESS.MIDDLEWARE + 'expressInit',
         'Expressjs/Router: /router',
         ['Expressjs/Route Path: /test', [NAMES.EXPRESS.MIDDLEWARE + '<anonymous>']],
         NAMES.EXPRESS.MIDDLEWARE + 'myErrorHandler'
@@ -679,12 +609,9 @@ test('transaction segments tests', (t) => {
     const endpoint = '/router1/router2/test'
 
     const { rootSegment, transaction } = await runTest({ app, t, endpoint })
-    checkSegments(
-      t,
+    t.assertSegments(
       rootSegment,
       [
-        NAMES.EXPRESS.MIDDLEWARE + 'query',
-        NAMES.EXPRESS.MIDDLEWARE + 'expressInit',
         'Expressjs/Router: /router1',
         [
           'Expressjs/Router: /router2',
@@ -714,15 +641,9 @@ test('transaction segments tests', (t) => {
     })
 
     const { rootSegment, transaction } = await runTest({ app, t, endpoint: '/a/b' })
-    checkSegments(
-      t,
+    t.assertSegments(
       rootSegment,
-      [
-        NAMES.EXPRESS.MIDDLEWARE + 'query',
-        NAMES.EXPRESS.MIDDLEWARE + 'expressInit',
-        'Expressjs/Route Path: /:foo/:bar',
-        [NAMES.EXPRESS.MIDDLEWARE + 'myHandler']
-      ],
+      ['Expressjs/Route Path: /:foo/:bar', [NAMES.EXPRESS.MIDDLEWARE + 'myHandler']],
       assertSegmentsOptions
     )
 
@@ -737,24 +658,19 @@ test('transaction segments tests', (t) => {
   t.test('when using a string pattern in path', async function (t) {
     const { app } = await setup()
 
-    app.get('/ab?cd', function myHandler(req, res) {
+    const path = isExpress5 ? /ab?cd/ : '/ab?cd'
+    app.get(path, function myHandler(req, res) {
       res.end()
     })
 
     const { rootSegment, transaction } = await runTest({ app, t, endpoint: '/abcd' })
-    checkSegments(
-      t,
+    t.assertSegments(
       rootSegment,
-      [
-        NAMES.EXPRESS.MIDDLEWARE + 'query',
-        NAMES.EXPRESS.MIDDLEWARE + 'expressInit',
-        'Expressjs/Route Path: /ab?cd',
-        [NAMES.EXPRESS.MIDDLEWARE + 'myHandler']
-      ],
+      [`Expressjs/Route Path: ${path}`, [NAMES.EXPRESS.MIDDLEWARE + 'myHandler']],
       assertSegmentsOptions
     )
 
-    checkMetrics(t, transaction.metrics, [NAMES.EXPRESS.MIDDLEWARE + 'myHandler//ab?cd'], '/ab?cd')
+    checkMetrics(t, transaction.metrics, [`${NAMES.EXPRESS.MIDDLEWARE}myHandler/${path}`], path)
   })
 
   t.test('when using a regular expression in path', async function (t) {
@@ -765,15 +681,9 @@ test('transaction segments tests', (t) => {
     })
 
     const { rootSegment, transaction } = await runTest({ app, t, endpoint: '/a' })
-    checkSegments(
-      t,
+    t.assertSegments(
       rootSegment,
-      [
-        NAMES.EXPRESS.MIDDLEWARE + 'query',
-        NAMES.EXPRESS.MIDDLEWARE + 'expressInit',
-        'Expressjs/Route Path: /a/',
-        [NAMES.EXPRESS.MIDDLEWARE + 'myHandler']
-      ],
+      ['Expressjs/Route Path: /a/', [NAMES.EXPRESS.MIDDLEWARE + 'myHandler']],
       assertSegmentsOptions
     )
 
@@ -789,12 +699,6 @@ test('transaction segments tests', (t) => {
   }
 })
 
-function checkSegments(t, segments, expected, opts) {
-  t.doesNotThrow(function () {
-    assertSegments(segments, expected, opts)
-  }, 'should have expected segments')
-}
-
 function checkMetrics(t, metrics, expected, path) {
   if (path === undefined) {
     path = '/test'
@@ -808,16 +712,7 @@ function checkMetrics(t, metrics, expected, path) {
     [{ name: 'DurationByCaller/Unknown/Unknown/Unknown/Unknown/all' }],
     [{ name: 'DurationByCaller/Unknown/Unknown/Unknown/Unknown/allWeb' }],
     [{ name: 'Apdex/Expressjs/GET/' + path }],
-    [{ name: 'Apdex' }],
-    [{ name: NAMES.EXPRESS.MIDDLEWARE + 'query//' }],
-    [{ name: NAMES.EXPRESS.MIDDLEWARE + 'expressInit//' }],
-    [{ name: NAMES.EXPRESS.MIDDLEWARE + 'query//', scope: 'WebTransaction/Expressjs/GET/' + path }],
-    [
-      {
-        name: NAMES.EXPRESS.MIDDLEWARE + 'expressInit//',
-        scope: 'WebTransaction/Expressjs/GET/' + path
-      }
-    ]
+    [{ name: 'Apdex' }]
   ]
 
   for (let i = 0; i < expected.length; i++) {
@@ -826,5 +721,5 @@ function checkMetrics(t, metrics, expected, path) {
     expectedAll.push([{ name: metric, scope: 'WebTransaction/Expressjs/GET/' + path }])
   }
 
-  assertMetrics(metrics, expectedAll, true, false)
+  t.assertMetrics(metrics, expectedAll, false, false)
 }

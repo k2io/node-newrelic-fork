@@ -10,6 +10,10 @@ const DatastoreShim = require('../../../lib/shim/datastore-shim')
 const helper = require('../../lib/agent_helper')
 const https = require('https')
 const StreamingSpanEvent = require('../../../lib/spans/streaming-span-event')
+const {
+  QuerySpec,
+  params: { DatastoreParameters }
+} = require('../../../lib/shim/specs')
 
 const CATEGORIES = {
   HTTP: 'http',
@@ -63,6 +67,8 @@ tap.test('fromSegment()', (t) => {
         const segment = agent.tracer.getTransaction().trace.root.children[0]
         const spanContext = segment.getSpanContext()
         spanContext.addCustomAttribute('Span Lee', 'no prize')
+        segment.addSpanAttribute('host', 'my-host')
+        segment.addSpanAttribute('port', 22)
 
         const span = StreamingSpanEvent.fromSegment(segment, 'parent')
 
@@ -98,6 +104,9 @@ tap.test('fromSegment()', (t) => {
         const agentAttributes = span._agentAttributes
         t.ok(agentAttributes)
 
+        t.same(agentAttributes['server.address'], { [STRING_TYPE]: 'my-host' })
+        t.same(agentAttributes['server.port'], { [INT_TYPE]: 22 })
+
         // Should have no http properties.
         const hasOwnAttribute = Object.hasOwnProperty.bind(agentAttributes)
         t.notOk(hasOwnAttribute('externalLibrary'))
@@ -107,6 +116,7 @@ tap.test('fromSegment()', (t) => {
         // Should have no datastore properties.
         t.notOk(hasOwnAttribute('db.statement'))
         t.notOk(hasOwnAttribute('db.instance'))
+        t.notOk(hasOwnAttribute('db.system'))
         t.notOk(hasOwnAttribute('peer.hostname'))
         t.notOk(hasOwnAttribute('peer.address'))
 
@@ -155,25 +165,35 @@ tap.test('fromSegment()', (t) => {
           t.ok(agentAttributes)
 
           // Should have (most) http properties.
+          t.same(agentAttributes['request.parameters.foo'], { [STRING_TYPE]: 'bar' })
           t.same(agentAttributes['http.url'], { [STRING_TYPE]: 'https://example.com/' })
+          t.same(agentAttributes['server.address'], { [STRING_TYPE]: 'example.com' })
+          t.same(agentAttributes['server.port'], { [INT_TYPE]: 443 })
           t.ok(agentAttributes['http.method'])
+          t.ok(agentAttributes['http.request.method'])
           t.same(agentAttributes['http.statusCode'], { [INT_TYPE]: 200 })
           t.same(agentAttributes['http.statusText'], { [STRING_TYPE]: 'OK' })
 
-          // Should have no datastore properties.
           const hasOwnAttribute = Object.hasOwnProperty.bind(agentAttributes)
-          t.notOk(hasOwnAttribute('db.statement'))
-          t.notOk(hasOwnAttribute('db.instance'))
-          t.notOk(hasOwnAttribute('peer.hostname'))
-          t.notOk(hasOwnAttribute('peer.address'))
 
+          // should remove mapped attributes
+          ;['library', 'url', 'hostname', 'port', 'procedure'].forEach((attr) => {
+            t.notOk(hasOwnAttribute(attr))
+          })
+
+          // Should have no datastore properties.
+          ;['db.statement', 'db.instance', 'db.system', 'peer.hostname', 'peer.address'].forEach(
+            (attr) => {
+              t.notOk(hasOwnAttribute(attr))
+            }
+          )
           t.end()
         })
       })
     })
   })
 
-  t.test('should create an datastore span with an datastore segment', (t) => {
+  t.test('should create a datastore span with a datastore segment', (t) => {
     agent.config.transaction_tracer.record_sql = 'raw'
 
     const shim = new DatastoreShim(agent, 'test-data-store')
@@ -184,16 +204,20 @@ tap.test('fromSegment()', (t) => {
     while (Buffer.byteLength(longQuery, 'utf8') < 2001) {
       longQuery += 'a'
     }
-    shim.recordQuery(dsConn, 'myDbOp', {
-      callback: shim.LAST,
-      query: shim.FIRST,
-      parameters: {
-        host: 'my-db-host',
-        port_path_or_id: '/path/to/db.sock',
-        database_name: 'my-database',
-        collection: 'my-collection'
-      }
-    })
+    shim.recordQuery(
+      dsConn,
+      'myDbOp',
+      new QuerySpec({
+        callback: shim.LAST,
+        query: shim.FIRST,
+        parameters: new DatastoreParameters({
+          host: 'my-db-host',
+          port_path_or_id: '/path/to/db.sock',
+          database_name: 'my-database',
+          collection: 'my-collection'
+        })
+      })
+    )
 
     shim.setParser((query) => {
       return {
@@ -245,14 +269,30 @@ tap.test('fromSegment()', (t) => {
 
         // Should have not http properties.
         const hasOwnAttribute = Object.hasOwnProperty.bind(agentAttributes)
-        t.notOk(hasOwnAttribute('http.url'))
-        t.notOk(hasOwnAttribute('http.method'))
+        ;['http.url', 'http.method', 'http.request.method'].forEach((attr) => {
+          t.notOk(hasOwnAttribute(attr))
+        })
 
+        // Should removed map attributes
+        ;[
+          'product',
+          'collection',
+          'sql',
+          'sql_obfuscated',
+          'database_name',
+          'host',
+          'port_path_or_id'
+        ].forEach((attr) => {
+          t.notOk(hasOwnAttribute(attr))
+        })
         // Should have (most) datastore properties.
         t.ok(agentAttributes['db.instance'])
         t.same(agentAttributes['db.collection'], { [STRING_TYPE]: 'my-collection' })
         t.same(agentAttributes['peer.hostname'], { [STRING_TYPE]: 'my-db-host' })
         t.same(agentAttributes['peer.address'], { [STRING_TYPE]: 'my-db-host:/path/to/db.sock' })
+        t.same(agentAttributes['db.system'], { [STRING_TYPE]: 'TestStore' }) // same as intrinsics.component
+        t.same(agentAttributes['server.address'], { [STRING_TYPE]: 'my-db-host' })
+        t.same(agentAttributes['server.port'], { [STRING_TYPE]: '/path/to/db.sock' })
 
         const statement = agentAttributes['db.statement']
         t.ok(statement)

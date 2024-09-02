@@ -11,6 +11,8 @@ module.exports = {
   rules: {
     'consistent-return': 'off',
     'jsdoc/require-jsdoc': 'off',
+    'jsdoc/tag-lines': 'off',
+    'jsdoc/check-types': 'off',
     'jsdoc/no-undefined-types': [
       'warn',
       {
@@ -18,27 +20,30 @@ module.exports = {
           'Logger',
           'Agent',
           'Shim',
+          'MessageShim',
           'TraceSegment',
           'Transaction',
+          'Tracer',
           'Exception',
-          'MetricAggregator'
+          'MetricAggregator',
+          'EventEmitter'
         ]
       }
     ]
   },
   parserOptions: {
-    ecmaVersion: '2020'
+    ecmaVersion: 2022
   },
-  parserOptions: {
-    ecmaVersion: 2020
-  },
-  ignorePatterns: ['test/versioned-external'],
+  ignorePatterns: [
+    'test/versioned-external',
+    'test/versioned/nextjs/app',
+    'test/versioned/nextjs/app-dir'
+  ],
   overrides: [
     {
       files: ['**/*.mjs'],
       parserOptions: {
-        sourceType: 'module',
-        ecmaVersion: 2022
+        sourceType: 'module'
       },
       rules: {
         // TODO: remove this when we decide on how to address

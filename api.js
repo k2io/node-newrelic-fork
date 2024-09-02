@@ -23,13 +23,16 @@ const {
   assignCLMSymbol,
   addCLMAttributes: maybeAddCLMAttributes
 } = require('./lib/util/code-level-metrics')
+const LlmFeedbackMessage = require('./lib/llm-events/feedback-message')
 
 const ATTR_DEST = require('./lib/config/attribute-filter').DESTINATIONS
-const MODULE_TYPE = require('./lib/shim/constants').MODULE_TYPE
+const MODULE_TYPE = require('./lib/instrumentation-descriptor').TYPES
 const NAMES = require('./lib/metrics/names')
 const obfuscate = require('./lib/util/sql/obfuscate')
 const { DESTINATIONS } = require('./lib/config/attribute-filter')
 const parse = require('module-details-from-path')
+const { isSimpleObject } = require('./lib/util/objects')
+const { AsyncLocalStorage } = require('async_hooks')
 
 /*
  *
@@ -59,7 +62,7 @@ const CUSTOM_EVENT_TYPE_REGEX = /^[a-zA-Z0-9:_ ]+$/
 
 /**
  * The exported New Relic API. This contains all of the functions meant to be
- * used by New Relic customers. For now, that means transaction naming.
+ * used by New Relic customers.
  *
  * You do not need to directly instantiate this class, as an instance of this is
  * the return from `require('newrelic')`.
@@ -242,14 +245,14 @@ API.prototype.setControllerName = function setControllerName(name, action) {
 }
 
 /**
- * Add a custom attribute to the current transaction. Some attributes are
+ * Add a custom attribute to the current transaction and span. Some attributes are
  * reserved (see CUSTOM_DENYLIST for the current, very short list), and
  * as with most API methods, this must be called in the context of an
  * active transaction. Most recently set value wins.
  *
  * @param {string} key  The key you want displayed in the RPM UI.
  * @param {string} value The value you want displayed. Must be serializable.
- * @returns {false|undefined} Retruns false when disabled/errored, otherwise undefined
+ * @returns {false|undefined} Returns false when disabled/errored, otherwise undefined
  */
 API.prototype.addCustomAttribute = function addCustomAttribute(key, value) {
   const metric = this.agent.metrics.getOrCreateMetric(
@@ -296,13 +299,12 @@ API.prototype.addCustomAttribute = function addCustomAttribute(key, value) {
 }
 
 /**
- * Adds all custom attributes in an object to the current transaction.
+ * Adds all custom attributes in an object to the current transaction and span.
  *
  * See documentation for newrelic.addCustomAttribute for more information on
  * setting custom attributes.
  *
- * An example of setting a custom attribute object:
- *
+ * @example
  *    newrelic.addCustomAttributes({test: 'value', test2: 'value2'});
  *
  * @param {object} [atts] Attribute object
@@ -329,7 +331,7 @@ API.prototype.addCustomAttributes = function addCustomAttributes(atts) {
  *
  * See documentation for newrelic.addCustomSpanAttribute for more information.
  *
- * An example of setting a custom span attribute:
+ * @example
  *
  *    newrelic.addCustomSpanAttribute({test: 'value', test2: 'value2'})
  *
@@ -358,7 +360,7 @@ API.prototype.addCustomSpanAttributes = function addCustomSpanAttributes(atts) {
  *
  * @param {string} key  The key you want displayed in the RPM UI.
  * @param {string} value The value you want displayed. Must be serializable.
- * @returns {false|undefined} Retruns false when disabled/errored, otherwise undefined
+ * @returns {false|undefined} Returns false when disabled/errored, otherwise undefined
  */
 API.prototype.addCustomSpanAttribute = function addCustomSpanAttribute(key, value) {
   const metric = this.agent.metrics.getOrCreateMetric(
@@ -398,20 +400,19 @@ API.prototype.addCustomSpanAttribute = function addCustomSpanAttribute(key, valu
  * `Error` or one of its subtypes, but the API will handle strings and objects
  * that have an attached `.message` or `.stack` property.
  *
- * An example of using this function is
- *
- *    try {
- *      performSomeTask();
- *    } catch (err) {
- *      newrelic.noticeError(
- *        err,
- *        {extraInformation: "error already handled in the application"},
- *        true
- *      );
- *    }
- *
  * NOTE: Errors that are recorded using this method do _not_ obey the
  * `ignore_status_codes` configuration.
+ *
+ * @example
+ * try {
+ *  performSomeTask();
+ * } catch (err) {
+ *  newrelic.noticeError(
+ *    err,
+ *    {extraInformation: "error already handled in the application"},
+ *    true
+ *  );
+ * }
  *
  * @param {Error} error
  *  The error to be traced.
@@ -471,13 +472,12 @@ API.prototype.noticeError = function noticeError(error, customAttributes, expect
  * If application log forwarding is disabled in the agent
  * configuration, this function does nothing.
  *
- * An example of using this function is
- *
- *    newrelic.recordLogEvent({
- *       message: 'cannot find file',
- *       level: 'ERROR',
- *       error: new SystemError('missing.txt')
- *    })
+ * @example
+ * newrelic.recordLogEvent({
+ *  message: 'cannot find file',
+ *  level: 'ERROR',
+ *  error: new SystemError('missing.txt')
+ * })
  *
  * @param {object} logEvent The log event object to send. Any
  *   attributes besides `message`, `level`, `timestamp`, and `error` are
@@ -551,20 +551,21 @@ API.prototype.recordLogEvent = function recordLogEvent(logEvent = {}) {
  * GUIDs, or timestamps), the rule will generate too many metrics and
  * potentially get your application blocked by New Relic.
  *
- * An example of a good rule with replacements:
  *
- *   newrelic.addNamingRule('^/storefront/(v[1-5])/(item|category|tag)',
- *                          'CommerceAPI/$1/$2')
+ * @example
+ * // An example of a good rule with replacements:
+ * newrelic.addNamingRule('^/storefront/(v[1-5])/(item|category|tag)',
+ *                        'CommerceAPI/$1/$2')
  *
- * An example of a bad rule with replacements:
+ * @example
+ * // An example of a bad rule with replacements:
+ * newrelic.addNamingRule('^/item/([0-9a-f]+)', 'Item/$1')
  *
- *   newrelic.addNamingRule('^/item/([0-9a-f]+)', 'Item/$1')
+ * // Keep in mind that the original URL and any query parameters will be sent
+ * // along with the request, so slow transactions will still be identifiable.
  *
- * Keep in mind that the original URL and any query parameters will be sent
- * along with the request, so slow transactions will still be identifiable.
- *
- * Naming rules can not be removed once added. They can also be added via the
- * agent's configuration. See configuration documentation for details.
+ * // Naming rules can not be removed once added. They can also be added via the
+ * // agent's configuration. See configuration documentation for details.
  *
  * @param {RegExp} pattern The pattern to rename (with capture groups).
  * @param {string} name    The name to use for the transaction.
@@ -588,8 +589,7 @@ API.prototype.addNamingRule = function addNamingRule(pattern, name) {
  * distorting an app's apdex or mean response time. Pattern may be a (standard
  * JavaScript) RegExp or a string.
  *
- * Example:
- *
+ * @example
  *   newrelic.addIgnoringRule('^/socket\\.io/')
  *
  * @param {RegExp} pattern The pattern to ignore.
@@ -612,9 +612,10 @@ API.prototype.addIgnoringRule = function addIgnoringRule(pattern) {
  * Output an HTML comment and log a warning the comment is meant to be
  * innocuous to the end user.
  *
+ * @private
  * @see RUM_ISSUES
  * @param {number} errorCode Error code from `RUM_ISSUES`.
- * @param {boolean} [quiet=false] Be quiet about this failure.
+ * @param {boolean} [quiet] Be quiet about this failure.
  * @returns {string} HTML comment for debugging purposes with specific error code
  */
 function _gracefail(errorCode, quiet) {
@@ -629,6 +630,7 @@ function _gracefail(errorCode, quiet) {
 /**
  * Function for generating a fully formed RUM header based on configuration options
  *
+ * @private
  * @param {object} options Configuration options for RUM
  * @param {string} [options.nonce] Nonce to inject into `<script>` header.
  * @param {boolean} [options.hasToRemoveScriptWrapper] Used to import agent script without `<script>` tag wrapper.
@@ -656,6 +658,7 @@ function _generateRUMHeader(options = {}, metadata, loader) {
  * Helper method for determining if we have the minimum required
  * information to generate our Browser Agent script tag
  *
+ * @private
  * @param {object} config agent configuration settings
  * @param {Transaction} transaction the active transaction or null
  * @param {boolean} allowTransactionlessInjection whether or not to allow the Browser Agent to be injected when there is no active transaction
@@ -802,7 +805,7 @@ API.prototype.getBrowserTimingHeader = function getBrowserTimingHeader(options =
      * Only the first 13 chars of the license should be used for hashing with
      * the transaction name.
      */
-    const key = config.license_key.substr(0, 13)
+    const key = config.license_key.substring(0, 13)
     rumHash.transactionName = hashes.obfuscateNameUsingKey(name, key)
 
     rumHash.queueTime = trans.queueTime
@@ -923,9 +926,9 @@ API.prototype.startSegment = function startSegment(name, record, handler, callba
  *    will be ended when {@link TransactionHandle#end} is called in the user's code.
  *
  * @example
- * var newrelic = require('newrelic')
+ * const newrelic = require('newrelic')
  * newrelic.startWebTransaction('/some/url/path', function() {
- *   var transaction = newrelic.getTransaction()
+ *   const transaction = newrelic.getTransaction()
  *   setTimeout(function() {
  *     // do some work
  *     transaction.end()
@@ -933,7 +936,7 @@ API.prototype.startSegment = function startSegment(name, record, handler, callba
  * })
  * @param {string} url
  *  The URL of the transaction.  It is used to name and group related transactions in APM,
- *  so it should be a generic name and not iclude any variable parameters.
+ *  so it should be a generic name and not include any variable parameters.
  * @param {Function}  handle
  *  Function that represents the transaction work.
  * @returns {null|*} Returns null if handle is not a function, otherwise the return value of handle
@@ -1011,9 +1014,9 @@ API.prototype.startBackgroundTransaction = startBackgroundTransaction
  *    will be ended when {@link TransactionHandle#end} is called in the user's code.
  *
  * @example
- * var newrelic = require('newrelic')
+ * const newrelic = require('newrelic')
  * newrelic.startBackgroundTransaction('Red October', 'Subs', function() {
- *   var transaction = newrelic.getTransaction()
+ *   const transaction = newrelic.getTransaction()
  *   setTimeout(function() {
  *     // do some work
  *     transaction.end()
@@ -1021,7 +1024,7 @@ API.prototype.startBackgroundTransaction = startBackgroundTransaction
  * })
  * @param {string} name
  *  The name of the transaction. It is used to name and group related
- *  transactions in APM, so it should be a generic name and not iclude any
+ *  transactions in APM, so it should be a generic name and not include any
  *  variable parameters.
  * @param {string} [group]
  *  Optional, used for grouping background transactions in APM. For more
@@ -1272,9 +1275,9 @@ API.prototype.recordCustomEvent = function recordCustomEvent(eventType, attribut
     fail = true
   }
   // If they don't pass an attributes object, or the attributes argument is not
-  // an object, or if it is an object and but is actually an array, log a
+  // an object, or if it is an object but is actually an array, log a
   // warning and set the fail bit.
-  if (!attributes || typeof attributes !== 'object' || Array.isArray(attributes)) {
+  if (isSimpleObject(attributes) === false) {
     logger.warn(
       'recordCustomEvent requires an object for its second argument, got %s (%s)',
       stringify(attributes),
@@ -1292,14 +1295,14 @@ API.prototype.recordCustomEvent = function recordCustomEvent(eventType, attribut
   // Filter all object type valued attributes out
   const filteredAttributes = _filterAttributes(attributes, `${eventType} custom event`)
 
-  const instrinics = {
+  const intrinsics = {
     type: eventType,
     timestamp: Date.now()
   }
 
   const tx = this.agent.getTransaction()
   const priority = (tx && tx.priority) || Math.random()
-  this.agent.customEventAggregator.add([instrinics, filteredAttributes], priority)
+  this.agent.customEventAggregator.add([intrinsics, filteredAttributes], priority)
 }
 
 /**
@@ -1310,7 +1313,7 @@ API.prototype.recordCustomEvent = function recordCustomEvent(eventType, attribut
  *
  * @param {string|object} moduleName The module name given to require to load the module, or the instrumentation specification
  * @param {string} moduleName.moduleName The module name given to require to load the module
- * @param {Function}  moduleName.onResolved The function to call prior to module load after the filepath has been resolved
+ * @param {string} [moduleName.absolutePath] Must provide absolute path to module if it does not exist within node_modules. This is used to instrument a file within the same application.
  * @param {Function}  moduleName.onRequire The function to call when the module has been loaded
  * @param {Function} [moduleName.onError] If provided, should `onRequire` throw an error, the error will be passed to
  * @param {Function} onRequire The function to call when the module has been loaded
@@ -1337,11 +1340,11 @@ API.prototype.instrument = function instrument(moduleName, onRequire, onError) {
  * Registers an instrumentation function.
  *
  * - `newrelic.instrumentConglomerate(moduleName, onRequire [, onError])`
- * - `newrelic.isntrumentConglomerate(options)`
+ * - `newrelic.instrumentConglomerate(options)`
  *
  * @param {string|object} moduleName The module name given to require to load the module, or the instrumentation specification
  * @param {string} moduleName.moduleName The module name given to require to load the module
- * @param {Function}  moduleName.onResolved The function to call prior to module load after the filepath has been resolved
+ * @param {string} [moduleName.absolutePath] Must provide absolute path to module if it does not exist within node_modules. This is used to instrument a file within the same application.
  * @param {Function}  moduleName.onRequire The function to call when the module has been loaded
  * @param {Function} [moduleName.onError] If provided, should `onRequire` throw an error, the error will be passed to
  * @param {Function} onRequire The function to call when the module has been loaded
@@ -1373,7 +1376,7 @@ API.prototype.instrumentConglomerate = function instrumentConglomerate(
  *
  * @param {string|object} moduleName The module name given to require to load the module, or the instrumentation specification
  * @param {string} moduleName.moduleName The module name given to require to load the module
- * @param {Function}  moduleName.onResolved The function to call prior to module load after the filepath has been resolved
+ * @param {string} [moduleName.absolutePath] Must provide absolute path to module if it does not exist within node_modules. This is used to instrument a file within the same application.
  * @param {Function}  moduleName.onRequire The function to call when the module has been loaded
  * @param {Function} [moduleName.onError] If provided, should `onRequire` throw an error, the error will be passed to
  * @param {Function} onRequire The function to call when the module has been loaded
@@ -1406,7 +1409,7 @@ API.prototype.instrumentDatastore = function instrumentDatastore(moduleName, onR
  *
  * @param {string|object} moduleName The module name given to require to load the module, or the instrumentation specification
  * @param {string} moduleName.moduleName The module name given to require to load the module
- * @param {Function}  moduleName.onResolved The function to call prior to module load after the filepath has been resolved
+ * @param {string} [moduleName.absolutePath] Must provide absolute path to module if it does not exist within node_modules. This is used to instrument a file within the same application.
  * @param {Function}  moduleName.onRequire The function to call when the module has been loaded
  * @param {Function} [moduleName.onError] If provided, should `onRequire` throw an error, the error will be passed to
  * @param {Function} onRequire The function to call when the module has been loaded
@@ -1443,7 +1446,7 @@ API.prototype.instrumentWebframework = function instrumentWebframework(
  *
  * @param {string|object} moduleName The module name given to require to load the module, or the instrumentation specification
  * @param {string} moduleName.moduleName The module name given to require to load the module
- * @param {Function}  moduleName.onResolved The function to call prior to module load after the filepath has been resolved
+ * @param {string} [moduleName.absolutePath] Must provide absolute path to module if it does not exist within node_modules. This is used to instrument a file within the same application.
  * @param {Function}  moduleName.onRequire The function to call when the module has been loaded
  * @param {Function} [moduleName.onError] If provided, should `onRequire` throw an error, the error will be passed to
  * @param {Function} onRequire The function to call when the module has been loaded
@@ -1472,14 +1475,15 @@ API.prototype.instrumentMessages = function instrumentMessages(moduleName, onReq
  * Applies an instrumentation to an already loaded CommonJs module.
  *
  * Note: This function will not work for ESM packages.
+ * @example
  *
- *    // oh no, express was loaded before newrelic
- *    const express   = require('express')
- *    const newrelic  = require('newrelic')
+ * // oh no, express was loaded before newrelic
+ * const express   = require('express')
+ * const newrelic  = require('newrelic')
  *
- *    // phew, we can use instrumentLoadedModule to make
- *    // sure express is still instrumented
- *    newrelic.instrumentLoadedModule('express', express)
+ * // phew, we can use instrumentLoadedModule to make
+ * // sure express is still instrumented
+ * newrelic.instrumentLoadedModule('express', express)
  *
  * @param {string} moduleName
  *  The module's name/identifier.  Will be normalized
@@ -1537,16 +1541,68 @@ API.prototype.getTraceMetadata = function getTraceMetadata() {
 }
 
 /**
+ * Record a LLM feedback event which can be viewed in New Relic API Monitoring.
+ *
+ * @param {object} params Input parameters.
+ * @param {string} params.traceId Identifier for the feedback event.
+ * Obtained from {@link getTraceMetadata}.
+ * @param {string} params.category A tag for the event.
+ * @param {string} params.rating A indicator of how useful the message was.
+ * @param {string} [params.message] The message that triggered the event.
+ * @param {object} [params.metadata] Additional key-value pairs to associate
+ * with the recorded event.
+ */
+API.prototype.recordLlmFeedbackEvent = function recordLlmFeedbackEvent({
+  traceId,
+  category,
+  rating,
+  message = '',
+  metadata = {}
+} = {}) {
+  this.agent.metrics
+    .getOrCreateMetric(`${NAMES.SUPPORTABILITY.API}/recordLlmFeedbackEvent`)
+    .incrementCallCount()
+
+  if (!traceId) {
+    logger.warn(
+      'A feedback event will not be recorded.  recordLlmFeedbackEvent must be called with a traceId.'
+    )
+    return
+  }
+
+  if (this.agent.config?.ai_monitoring?.enabled !== true) {
+    logger.warn('recordLlmFeedbackEvent invoked but ai_monitoring is disabled.')
+    return
+  }
+
+  const tx = this.agent.tracer.getTransaction()
+  if (!tx) {
+    logger.warn(
+      'A feedback events will not be recorded. recordLlmFeedbackEvent must be called within the scope of a transaction.'
+    )
+    return
+  }
+
+  const feedback = new LlmFeedbackMessage({
+    traceId,
+    category,
+    rating,
+    message
+  })
+  this.recordCustomEvent('LlmFeedbackMessage', { ...metadata, ...feedback })
+}
+
+/**
  * Shuts down the agent.
  *
  * @param {object} [options]
  *  Object with shut down options.
- * @param {boolean} [options.collectPendingData=false]
+ * @param {boolean} [options.collectPendingData]
  *  If true, the agent will send any pending data to the collector before
  *  shutting down.
- * @param {number} [options.timeout=0]
+ * @param {number} [options.timeout]
  *  Time in milliseconds to wait before shutting down.
- * @param {boolean} [options.waitForIdle=false]
+ * @param {boolean} [options.waitForIdle]
  *  If true, the agent will not shut down until there are no active transactions.
  * @param {Function} [cb]
  *  Callback function that runs when agent stops.
@@ -1574,6 +1630,7 @@ API.prototype.shutdown = function shutdown(options, cb) {
 /**
  * Helper function for logging if an error occurs, and where
  *
+ * @private
  * @param {Error} error If defined, the error that occurred
  * @param {string} phase Where in the process the error happened
  * @returns {void}
@@ -1587,14 +1644,15 @@ function _logErrorCallback(error, phase) {
 /**
  * Function for handling the graceful shutdown process, including processing of data and handling errors
  *
+ * @private
  * @param {object} api instantiation of this file
  * @param {object} options shutdown options object
- * @param {boolean} [options.collectPendingData=false]
+ * @param {boolean} [options.collectPendingData]
  *  If true, the agent will send any pending data to the collector before
  *  shutting down.
- * @param {number} [options.timeout=0]
+ * @param {number} [options.timeout]
  *  Time in milliseconds to wait before shutting down.
- * @param {boolean} [options.waitForIdle=false]
+ * @param {boolean} [options.waitForIdle]
  *  If true, the agent will not shut down until there are no active transactions.
  * @param {Function} callback callback function to execute after shutdown process is complete (successful or not)
  */
@@ -1651,6 +1709,7 @@ function _doShutdown(api, options, callback) {
  * Validates that all keys in a given object have values that are less than or equal to a given length
  * Assumes all values have .length property (string/array)
  *
+ * @private
  * @param {object} object The object to validate
  * @param {number} maxLength The max allowed length
  * @returns {boolean} Whether or not the object passes validation
@@ -1722,6 +1781,7 @@ API.prototype.setUserID = function setUserID(id) {
 /**
  * Function for removing invalid attribute key/value pairs from an object
  *
+ * @private
  * @param {object} attributes The attribute object
  * @param {string} name Caller name, used for debugging/logging purposes only
  * @returns {object} Attribute object containing only valid key/value pairs
@@ -1778,7 +1838,7 @@ API.prototype.setErrorGroupCallback = function setErrorGroupCallback(callback) {
   )
   metric.incrementCallCount()
 
-  if (!this.shim.isFunction(callback) || this.shim.isPromise(callback)) {
+  if (!this.shim.isFunction(callback) || this.shim.isAsyncFunction(callback)) {
     logger.warn(
       'Error Group callback must be a synchronous function, Error Group attribute will not be added'
     )
@@ -1786,6 +1846,110 @@ API.prototype.setErrorGroupCallback = function setErrorGroupCallback(callback) {
   }
 
   this.agent.errors.errorGroupCallback = callback
+}
+
+/**
+ * Registers a callback which will be used for calculating token counts on Llm events when they are not
+ * available. This function will typically only be used if `ai_monitoring.record_content.enabled` is false
+ * and you want to still capture token counts for Llm events.
+ *
+ * Provided callbacks must return an integer value for the token count for a given piece of content.
+ *
+ * @param {Function} callback - synchronous function called to calculate token count for content.
+ * @example
+ * // @param {string} model - name of model (i.e. gpt-3.5-turbo)
+ * // @param {string} content - prompt or completion response
+ * function tokenCallback(model, content) {
+ *  // calculate tokens based on model and content
+ *  // return token count
+ *  return 40
+ * }
+ */
+API.prototype.setLlmTokenCountCallback = function setLlmTokenCountCallback(callback) {
+  const metric = this.agent.metrics.getOrCreateMetric(
+    NAMES.SUPPORTABILITY.API + '/setLlmTokenCountCallback'
+  )
+  metric.incrementCallCount()
+
+  if (!this.shim.isFunction(callback) || this.shim.isAsyncFunction(callback)) {
+    logger.warn(
+      'Llm token count callback must be a synchronous function, callback will not be registered.'
+    )
+    return
+  }
+
+  this.agent.llm.tokenCountCallback = callback
+}
+
+/**
+ * Ignores the current transaction when calculating your {@link https://docs.newrelic.com/docs/apm/new-relic-apm/apdex/apdex-measuring-user-satisfaction/|Apdex score}.
+ * This is useful when you have either very short or very long transactions (such as file downloads) that can skew your Apdex score.
+ */
+API.prototype.ignoreApdex = function ignoreApdex() {
+  const metric = this.agent.metrics.getOrCreateMetric(NAMES.SUPPORTABILITY.API + '/ignoreApdex')
+  metric.incrementCallCount()
+
+  const transaction = this.agent.tracer.getTransaction()
+
+  if (!transaction) {
+    logger.warn(
+      'Apdex will not be ignored. ignoreApdex must be called within the scope of a transaction.'
+    )
+    return
+  }
+
+  transaction.ignoreApdex = true
+}
+
+/**
+ * Run a function with the passed in LLM context as the active context and return its return value.
+ *
+ * @example
+ * const OpenAI = require('openai')
+ * const client = new OpenAI()
+ * newrelic.withLlmCustomAttributes({'llm.someAttribute': 'someValue'}, async () => {
+ *    const response = await client.chat.completions.create({ messages: [
+ *      { role: 'user', content: 'Tell me about Node.js.'}
+ *    ]})
+ * })
+ * @param {Object} context LLM custom attributes context
+ * @param {Function} callback The function to execute in context.
+ */
+API.prototype.withLlmCustomAttributes = function withLlmCustomAttributes(context, callback) {
+  context = context || {}
+  const metric = this.agent.metrics.getOrCreateMetric(
+    NAMES.SUPPORTABILITY.API + '/withLlmCustomAttributes'
+  )
+  metric.incrementCallCount()
+
+  const transaction = this.agent.tracer.getTransaction()
+
+  if (!callback || typeof callback !== 'function') {
+    logger.warn('withLlmCustomAttributes must be used with a valid callback')
+    return
+  }
+
+  if (!transaction) {
+    logger.warn('withLlmCustomAttributes must be called within the scope of a transaction.')
+    return callback()
+  }
+
+  for (const [key, value] of Object.entries(context)) {
+    if (typeof value === 'object' || typeof value === 'function') {
+      logger.warn(`Invalid attribute type for ${key}. Skipped.`)
+      delete context[key]
+    } else if (key.indexOf('llm.') !== 0) {
+      logger.warn(`Invalid attribute name ${key}. Renamed to "llm.${key}".`)
+      delete context[key]
+      context[`llm.${key}`] = value
+    }
+  }
+
+  transaction._llmContextManager = transaction._llmContextManager || new AsyncLocalStorage()
+  const parentContext = transaction._llmContextManager.getStore() || {}
+
+  const fullContext = Object.assign({}, parentContext, context)
+  return transaction._llmContextManager.run(fullContext, callback)
 }
 
 module.exports = API

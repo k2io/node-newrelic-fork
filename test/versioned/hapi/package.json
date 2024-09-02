@@ -1,11 +1,12 @@
 {
   "name": "hapi-tests",
+  "targets": [{"name":"@hapi/hapi","minAgentVersion":"9.0.0"}],
   "version": "0.0.0",
   "private": true,
   "tests": [
     {
       "engines": {
-        "node": ">=16"
+        "node": ">=18"
       },
       "dependencies": {
         "ejs": "2.5.5",

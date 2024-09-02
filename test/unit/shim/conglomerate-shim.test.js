@@ -66,4 +66,21 @@ test('ConglomerateShim', (t) => {
     t.ok(shim.makeSpecializedShim(shim.WEB_FRAMEWORK, 'foobar') instanceof WebFrameworkShim)
     t.end()
   })
+
+  t.test('should assign properties from parent', (t) => {
+    const mod = 'test-mod'
+    const name = mod
+    const version = '1.0.0'
+    const shim = new ConglomerateShim(agent, mod, mod, name, version)
+    t.equal(shim.moduleName, mod)
+    t.equal(agent, shim._agent)
+    t.equal(shim.pkgVersion, version)
+    function childFn() {}
+    const childShim = shim.makeSpecializedShim(shim.DATASTORE, childFn)
+    t.same(shim._agent, childShim._agent)
+    t.equal(shim.moduleName, childShim.moduleName)
+    t.equal(shim.pkgVersion, childShim.pkgVersion)
+    t.equal(shim.id, childShim.id)
+    t.end()
+  })
 })

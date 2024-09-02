@@ -1,0 +1,24 @@
+{
+  "name": "openai-tests",
+  "targets": [{"name":"openai","minAgentVersion":"11.13.0"}],
+  "version": "0.0.0",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "tests": [
+    {
+      "engines": {
+        "node": ">=18"
+      },
+      "dependencies": {
+        "openai": ">=4.0.0"
+      },
+      "files": [
+        "chat-completions.tap.js",
+        "embeddings.tap.js",
+        "feedback-messages.tap.js"
+      ]
+    }
+  ]
+}

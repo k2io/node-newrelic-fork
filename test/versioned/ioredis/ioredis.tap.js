@@ -7,8 +7,9 @@
 
 const tap = require('tap')
 const helper = require('../../lib/agent_helper')
-const assertMetrics = require('../../lib/metrics_helper').assertMetrics
+require('../../lib/metrics_helper')
 const params = require('../../lib/params')
+const urltils = require('../../../lib/util/urltils')
 
 // Indicates unique database in Redis. 0-15 supported.
 const DB_INDEX = 3
@@ -16,6 +17,8 @@ const DB_INDEX = 3
 tap.test('ioredis instrumentation', (t) => {
   let agent = null
   let redisClient = null
+  let METRIC_HOST_NAME
+  let HOST_ID
 
   t.autoend()
   t.beforeEach(async () => {
@@ -23,6 +26,10 @@ tap.test('ioredis instrumentation', (t) => {
     const Redis = require('ioredis')
     redisClient = new Redis(params.redis_port, params.redis_host)
     await helper.flushRedisDb(redisClient, DB_INDEX)
+    METRIC_HOST_NAME = urltils.isLocalhost(params.redis_host)
+      ? agent.config.getHostnameSafe()
+      : params.redis_host
+    HOST_ID = METRIC_HOST_NAME + '/' + params.redis_port
 
     await new Promise(async (resolve, reject) => {
       redisClient.select(DB_INDEX, (err) => {
@@ -41,18 +48,16 @@ tap.test('ioredis instrumentation', (t) => {
   })
 
   t.test('creates expected metrics', { timeout: 5000 }, (t) => {
-    t.plan(1)
-
+    t.plan(6)
     agent.on('transactionFinished', function (tx) {
       const expected = [
         [{ name: 'Datastore/all' }],
         [{ name: 'Datastore/Redis/all' }],
         [{ name: 'Datastore/operation/Redis/set' }]
       ]
+      expected['Datastore/instance/Redis/' + HOST_ID] = 2
 
-      t.doesNotThrow(() => {
-        assertMetrics(tx.metrics, expected, false, false)
-      }, 'should have expected metrics')
+      t.assertMetrics(tx.metrics, expected, false, false)
       t.end()
     })
 

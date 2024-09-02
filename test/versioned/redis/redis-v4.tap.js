@@ -8,6 +8,7 @@
 const tap = require('tap')
 const test = tap.test
 const helper = require('../../lib/agent_helper')
+const { removeMatchedModules } = require('../../lib/cache-buster')
 const params = require('../../lib/params')
 const urltils = require('../../../lib/util/urltils')
 
@@ -52,11 +53,7 @@ test('Redis instrumentation', function (t) {
     }
     // must purge require cache of redis related instrumentation
     // otherwise it will not re-register on subsequent test runs
-    Object.keys(require.cache).forEach((key) => {
-      if (/redis/.test(key)) {
-        delete require.cache[key]
-      }
-    })
+    removeMatchedModules(/redis/)
   })
 
   t.test('should find Redis calls in the transaction trace', function (t) {
@@ -114,6 +111,30 @@ test('Redis instrumentation', function (t) {
         'Datastore/operation/Redis/set': 1,
         'Datastore/operation/Redis/get': 1
       }
+      checkMetrics(t, unscoped, expected)
+      t.end()
+    })
+  })
+
+  t.test('should handle multi commands', function (t) {
+    helper.runInTransaction(agent, async function transactionInScope() {
+      const transaction = agent.getTransaction()
+      const results = await client.multi().set('multi-key', 'multi-value').get('multi-key').exec()
+
+      t.same(results, ['OK', 'multi-value'], 'should return expected results')
+      transaction.end()
+      const unscoped = transaction.metrics.unscoped
+      const expected = {
+        'Datastore/all': 4,
+        'Datastore/allWeb': 4,
+        'Datastore/Redis/all': 4,
+        'Datastore/Redis/allWeb': 4,
+        'Datastore/operation/Redis/multi': 1,
+        'Datastore/operation/Redis/set': 1,
+        'Datastore/operation/Redis/get': 1,
+        'Datastore/operation/Redis/exec': 1
+      }
+      expected['Datastore/instance/Redis/' + HOST_ID] = 4
       checkMetrics(t, unscoped, expected)
       t.end()
     })

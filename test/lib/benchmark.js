@@ -35,7 +35,7 @@ class Benchmark {
     const samples = this.samples
     return (this.processedSamples = Object.keys(samples).reduce((acc, sampleName) => {
       try {
-        acc[sampleName] = new BenchmarkStats(samples[sampleName])
+        acc[sampleName] = new BenchmarkStats(samples[sampleName], this.name, sampleName)
         return acc
       } catch (e) {
         /* eslint-disable no-console */
@@ -73,9 +73,6 @@ class Benchmark {
       const prevCpu = process.cpuUsage()
       const testFn = test.fn
 
-      if (test.async) {
-        return testFn(agent, () => after(test, next, executeCb, prevCpu))
-      }
       await testFn(agent)
       return after(test, next, executeCb, prevCpu)
     }
@@ -108,7 +105,7 @@ class Benchmark {
       if (idx >= suite.tests.length) {
         return true
       }
-      return initiator(initiator, suite.tests[idx], idx)
+      return await initiator(initiator, suite.tests[idx], idx)
     }
 
     const afterTestRuns = (initiator, test, samples, idx) => {
@@ -132,7 +129,7 @@ class Benchmark {
       }
 
       if (typeof test.initialize === 'function') {
-        test.initialize(agent)
+        await test.initialize(agent)
       }
 
       const samples = []
@@ -152,9 +149,9 @@ class Benchmark {
 }
 
 class BenchmarkStats {
-  constructor(samples) {
+  constructor(samples, testName, sampleName) {
     if (samples.length < 1) {
-      throw new Error('BenchmarkStats requires additional samples')
+      throw new Error(`BenchmarkStats for ${testName} has no samples. SampleName: ${sampleName}`)
     }
 
     let sortedSamples = samples.slice().sort((a, b) => a - b)

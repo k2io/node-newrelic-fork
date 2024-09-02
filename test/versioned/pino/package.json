@@ -1,11 +1,12 @@
 {
   "name": "pino-tests",
+  "targets": [{"name":"pino","minAgentVersion":"8.11.0"}],
   "version": "0.0.0",
   "private": true,
   "tests": [
     {
       "engines": {
-        "node": ">=16"
+        "node": ">=18"
       },
       "dependencies": {
         "pino": ">=7.0.0",

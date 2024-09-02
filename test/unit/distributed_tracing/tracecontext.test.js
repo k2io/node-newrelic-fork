@@ -4,26 +4,18 @@
  */
 
 'use strict'
-
-// TODO: convert to normal tap style.
-// Below allows use of mocha DSL with tap runner.
-require('tap').mochaGlobals()
-
-const chai = require('chai')
-const expect = chai.expect
+const test = require('node:test')
+const assert = require('node:assert')
 const helper = require('../../lib/agent_helper')
 const Transaction = require('../../../lib/transaction')
 const TraceContext = require('../../../lib/transaction/tracecontext').TraceContext
 const sinon = require('sinon')
 
-describe('TraceContext', function () {
-  let traceContext = null
-  let agent = null
-  let transaction = null
+test('TraceContext', async function (t) {
   const supportabilitySpy = sinon.spy()
 
-  beforeEach(function () {
-    agent = helper.loadMockedAgent({
+  function beforeEach(ctx) {
+    const agent = helper.loadMockedAgent({
       attributes: { enabled: true }
     })
 
@@ -34,62 +26,70 @@ describe('TraceContext', function () {
 
     agent.recordSupportability = supportabilitySpy
 
-    transaction = new Transaction(agent)
-    traceContext = new TraceContext(transaction)
-  })
+    const transaction = new Transaction(agent)
+    ctx.nr = {}
+    ctx.nr.traceContext = new TraceContext(transaction)
+    ctx.nr.transaction = transaction
+    ctx.nr.agent = agent
+  }
 
-  afterEach(function () {
+  function afterEach(ctx) {
     supportabilitySpy.resetHistory()
-    helper.unloadAgent(agent)
-  })
+    helper.unloadAgent(ctx.nr.agent)
+  }
 
-  describe('acceptTraceContextPayload', () => {
-    it('should accept valid trace context headers', () => {
+  await t.test('acceptTraceContextPayload', async (t) => {
+    t.beforeEach(beforeEach)
+    t.afterEach(afterEach)
+
+    await t.test('should accept valid trace context headers', (ctx) => {
+      const { traceContext } = ctx.nr
       const traceparent = '00-00015f9f95352ad550284c27c5d3084c-00f067aa0ba902b7-00'
       // eslint-disable-next-line max-len
       const tracestate = `33@nr=0-0-33-2827902-7d3efb1b173fecfa-e8b91a159289ff74-1-1.23456-${Date.now()}`
 
       const tcd = traceContext.acceptTraceContextPayload(traceparent, tracestate)
-      expect(tcd.acceptedTraceparent).to.equal(true)
-      expect(tcd.acceptedTracestate).to.equal(true)
-      expect(tcd.traceId).to.equal('00015f9f95352ad550284c27c5d3084c')
-      expect(tcd.parentSpanId).to.equal('00f067aa0ba902b7')
-      expect(tcd.parentType).to.equal('App')
-      expect(tcd.accountId).to.equal('33')
-      expect(tcd.appId).to.equal('2827902')
-      expect(tcd.transactionId).to.equal('e8b91a159289ff74')
-      expect(tcd.sampled).to.equal(true)
-      expect(tcd.priority).to.equal(1.23456)
-      expect(tcd.transportDuration).to.be.below(10)
-      expect(tcd.transportDuration).to.be.at.least(0)
+      assert.equal(tcd.acceptedTraceparent, true)
+      assert.equal(tcd.acceptedTracestate, true)
+      assert.equal(tcd.traceId, '00015f9f95352ad550284c27c5d3084c')
+      assert.equal(tcd.parentSpanId, '00f067aa0ba902b7')
+      assert.equal(tcd.parentType, 'App')
+      assert.equal(tcd.accountId, '33')
+      assert.equal(tcd.appId, '2827902')
+      assert.equal(tcd.transactionId, 'e8b91a159289ff74')
+      assert.equal(tcd.sampled, true)
+      assert.equal(tcd.priority, 1.23456)
+      assert.ok(tcd.transportDuration < 10)
+      assert.ok(tcd.transportDuration >= 0)
     })
 
-    it('should not accept an empty traceparent header', () => {
+    await t.test('should not accept an empty traceparent header', (ctx) => {
+      const { traceContext } = ctx.nr
       const tcd = traceContext.acceptTraceContextPayload(null, '')
-      expect(tcd.acceptedTraceparent).to.equal(false)
+      assert.equal(tcd.acceptedTraceparent, false)
     })
 
-    it('should not accept an invalid traceparent header', () => {
+    await t.test('should not accept an invalid traceparent header', (ctx) => {
+      const { traceContext } = ctx.nr
       const tcd = traceContext.acceptTraceContextPayload('invalid', '')
-      expect(tcd.acceptedTraceparent).to.equal(false)
+      assert.equal(tcd.acceptedTraceparent, false)
     })
 
-    it('should not accept an invalid tracestate header', () => {
+    await t.test('should not accept an invalid tracestate header', (ctx) => {
+      const { traceContext } = ctx.nr
       const traceparent = '00-00015f9f95352ad550284c27c5d3084c-00f067aa0ba902b7-00'
       const tracestate = 'asdf,===asdf,,'
       const tcd = traceContext.acceptTraceContextPayload(traceparent, tracestate)
 
-      expect(supportabilitySpy.callCount).to.equal(2)
-      /* eslint-disable-next-line max-len */
-      expect(supportabilitySpy.secondCall.args[0]).to.equal(
-        'TraceContext/TraceState/Parse/Exception'
-      )
+      assert.equal(supportabilitySpy.callCount, 2)
+      assert.equal(supportabilitySpy.secondCall.args[0], 'TraceContext/TraceState/Parse/Exception')
 
-      expect(tcd.acceptedTraceparent).to.equal(true)
-      expect(tcd.acceptedTracestate).to.equal(false)
+      assert.equal(tcd.acceptedTraceparent, true)
+      assert.equal(tcd.acceptedTracestate, false)
     })
 
-    it('should accept traceparent when tracestate missing', () => {
+    await t.test('should accept traceparent when tracestate missing', (ctx, end) => {
+      const { agent } = ctx.nr
       agent.config.distributed_tracing.enabled = true
       agent.config.span_events.enabled = false
 
@@ -103,13 +103,15 @@ describe('TraceContext', function () {
 
         // The traceId should propagate
         const newTraceparent = txn.traceContext.createTraceparent()
-        expect(newTraceparent.startsWith('00-4bf92f3577b34da6a')).to.be.true
+        assert.ok(newTraceparent.startsWith('00-4bf92f3577b34da6a'))
 
         txn.end()
+        end()
       })
     })
 
-    it('should accept traceparent when tracestate empty string', () => {
+    await t.test('should accept traceparent when tracestate empty string', (ctx, end) => {
+      const { agent } = ctx.nr
       agent.config.distributed_tracing.enabled = true
       agent.config.span_events.enabled = false
 
@@ -124,185 +126,245 @@ describe('TraceContext', function () {
 
         // The traceId should propagate
         const newTraceparent = txn.traceContext.createTraceparent()
-        expect(newTraceparent.startsWith('00-4bf92f3577b34da6a')).to.be.true
+        assert.ok(newTraceparent.startsWith('00-4bf92f3577b34da6a'))
 
         txn.end()
+        end()
       })
     })
   })
 
-  describe('flags hex', function () {
-    it('should parse trace flags in the traceparent header', function () {
+  await t.test('flags hex', async (t) => {
+    t.beforeEach(beforeEach)
+    t.afterEach(afterEach)
+    await t.test('should parse trace flags in the traceparent header', function (ctx) {
+      const { traceContext } = ctx.nr
       let flags = traceContext.parseFlagsHex('01')
-      expect(flags.sampled).to.be.true
+      assert.ok(flags.sampled)
 
       flags = traceContext.parseFlagsHex('00')
-      expect(flags.sampled).to.be.false
+      assert.ok(!flags.sampled)
     })
 
-    it('should return proper trace flags hex', function () {
+    await t.test('should return proper trace flags hex', function (ctx) {
+      const { transaction, traceContext } = ctx.nr
       transaction.sampled = false
       let flagsHex = traceContext.createFlagsHex()
-      expect(flagsHex).to.equal('00')
+      assert.equal(flagsHex, '00')
 
       transaction.sampled = true
       flagsHex = traceContext.createFlagsHex()
-      expect(flagsHex).to.equal('01')
+      assert.equal(flagsHex, '01')
     })
   })
 
-  describe('_validateAndParseTraceParentHeader', () => {
-    it('should pass valid traceparent header', () => {
+  await t.test('_validateAndParseTraceParentHeader', async (t) => {
+    t.beforeEach(beforeEach)
+    t.afterEach(afterEach)
+    await t.test('should pass valid traceparent header', (ctx) => {
+      const { traceContext } = ctx.nr
       const traceparent = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00'
-      expect(traceContext._validateAndParseTraceParentHeader(traceparent).entryValid).to.be.ok
+      assert.ok(traceContext._validateAndParseTraceParentHeader(traceparent).entryValid)
     })
 
-    it('should not pass 32 char string of all zeroes in traceid part of header', () => {
-      const allZeroes = '00-00000000000000000000000000000000-00f067aa0ba902b7-00'
+    await t.test(
+      'should not pass 32 char string of all zeroes in traceid part of header',
+      (ctx) => {
+        const { traceContext } = ctx.nr
+        const allZeroes = '00-00000000000000000000000000000000-00f067aa0ba902b7-00'
 
-      expect(traceContext._validateAndParseTraceParentHeader(allZeroes).entryValid).to.equal(false)
-    })
+        assert.equal(traceContext._validateAndParseTraceParentHeader(allZeroes).entryValid, false)
+      }
+    )
 
-    it('should not pass 16 char string of all zeroes in parentid part of header', () => {
-      const allZeroes = '00-4bf92f3577b34da6a3ce929d0e0e4736-0000000000000000-00'
+    await t.test(
+      'should not pass 16 char string of all zeroes in parentid part of header',
+      (ctx) => {
+        const { traceContext } = ctx.nr
+        const allZeroes = '00-4bf92f3577b34da6a3ce929d0e0e4736-0000000000000000-00'
 
-      expect(traceContext._validateAndParseTraceParentHeader(allZeroes).entryValid).to.equal(false)
-    })
+        assert.equal(traceContext._validateAndParseTraceParentHeader(allZeroes).entryValid, false)
+      }
+    )
 
-    it('should not pass when traceid part contains uppercase letters', () => {
+    await t.test('should not pass when traceid part contains uppercase letters', (ctx) => {
+      const { traceContext } = ctx.nr
       const someCaps = '00-4BF92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00'
 
-      expect(traceContext._validateAndParseTraceParentHeader(someCaps).entryValid).to.equal(false)
+      assert.equal(traceContext._validateAndParseTraceParentHeader(someCaps).entryValid, false)
     })
 
-    it('should not pass when parentid part contains uppercase letters', () => {
+    await t.test('should not pass when parentid part contains uppercase letters', (ctx) => {
+      const { traceContext } = ctx.nr
       const someCaps = '00-4bf92f3577b34da6a3ce929d0e0e4736-00FFFFaa0ba902b7-00'
 
-      expect(traceContext._validateAndParseTraceParentHeader(someCaps).entryValid).to.equal(false)
+      assert.equal(traceContext._validateAndParseTraceParentHeader(someCaps).entryValid, false)
     })
 
-    it('should not pass when traceid part contains invalid chars', () => {
+    await t.test('should not pass when traceid part contains invalid chars', (ctx) => {
+      const { traceContext } = ctx.nr
       const invalidChar = '00-ZZf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00'
 
-      expect(traceContext._validateAndParseTraceParentHeader(invalidChar).entryValid).to.equal(
-        false
-      )
+      assert.equal(traceContext._validateAndParseTraceParentHeader(invalidChar).entryValid, false)
     })
 
-    it('should not pass when parentid part contains invalid chars', () => {
+    await t.test('should not pass when parentid part contains invalid chars', (ctx) => {
+      const { traceContext } = ctx.nr
       const invalidChar = '00-aaf92f3577b34da6a3ce929d0e0e4736-00XX67aa0ba902b7-00'
 
-      expect(traceContext._validateAndParseTraceParentHeader(invalidChar).entryValid).to.equal(
-        false
-      )
+      assert.equal(traceContext._validateAndParseTraceParentHeader(invalidChar).entryValid, false)
     })
 
-    it('should not pass when tracid part is < 32 char long', () => {
+    await t.test('should not pass when tracid part is < 32 char long', (ctx) => {
+      const { traceContext } = ctx.nr
       const shorterStr = '00-4bf92f3-00f067aa0ba902b7-00'
 
-      expect(traceContext._validateAndParseTraceParentHeader(shorterStr).entryValid).to.equal(false)
+      assert.equal(traceContext._validateAndParseTraceParentHeader(shorterStr).entryValid, false)
     })
 
-    it('should not pass when tracid part is > 32 char long', () => {
+    await t.test('should not pass when tracid part is > 32 char long', (ctx) => {
+      const { traceContext } = ctx.nr
       const longerStr = '00-4bf92f3577b34da6a3ce929d0e0e47366666666-00f067aa0ba902b7-00'
 
-      expect(traceContext._validateAndParseTraceParentHeader(longerStr).entryValid).to.equal(false)
+      assert.equal(traceContext._validateAndParseTraceParentHeader(longerStr).entryValid, false)
     })
 
-    it('should not pass when parentid part is < 16 char long', () => {
+    await t.test('should not pass when parentid part is < 16 char long', (ctx) => {
+      const { traceContext } = ctx.nr
       const shorterStr = '00-aaf92f3577b34da6a3ce929d0e0e4736-ff-00'
 
-      expect(traceContext._validateAndParseTraceParentHeader(shorterStr).entryValid).to.equal(false)
+      assert.equal(traceContext._validateAndParseTraceParentHeader(shorterStr).entryValid, false)
     })
 
-    it('should not pass when parentid part is > 16 char long', () => {
+    await t.test('should not pass when parentid part is > 16 char long', (ctx) => {
+      const { traceContext } = ctx.nr
       const shorterStr = '00-aaf92f3577b34da6a3ce929d0e0e4736-00XX67aa0ba902b72322332-00'
 
-      expect(traceContext._validateAndParseTraceParentHeader(shorterStr).entryValid).to.equal(false)
+      assert.equal(traceContext._validateAndParseTraceParentHeader(shorterStr).entryValid, false)
+    })
+
+    await t.test('should handle if traceparent is a buffer', (ctx) => {
+      const { traceContext } = ctx.nr
+      const traceparent = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00'
+      const bufferTraceParent = Buffer.from(traceparent, 'utf8')
+      assert.ok(traceContext._validateAndParseTraceParentHeader(bufferTraceParent).entryValid)
     })
   })
 
-  describe('_validateAndParseTraceStateHeader', () => {
-    it('should pass a valid tracestate header', () => {
+  await t.test('_validateAndParseTraceStateHeader', async (t) => {
+    t.beforeEach(beforeEach)
+    t.afterEach(afterEach)
+    await t.test('should pass a valid tracestate header', (ctx) => {
+      const { agent, traceContext } = ctx.nr
       agent.config.trusted_account_key = '190'
       const goodTraceStateHeader =
         /* eslint-disable-next-line max-len */
         '190@nr=0-0-709288-8599547-f85f42fd82a4cf1d-164d3b4b0d09cb05-1-0.789-1563574856827,234234@foo=bar'
       const valid = traceContext._validateAndParseTraceStateHeader(goodTraceStateHeader)
-      expect(valid).to.be.ok
-      expect(valid.entryFound).to.be.true
-      expect(valid.entryValid).to.be.true
-      expect(valid.intrinsics.version).to.equal(0)
-      expect(valid.intrinsics.parentType).to.equal('App')
-      expect(valid.intrinsics.accountId).to.equal('709288')
-      expect(valid.intrinsics.appId).to.equal('8599547')
-      expect(valid.intrinsics.spanId).to.equal('f85f42fd82a4cf1d')
-      expect(valid.intrinsics.transactionId).to.equal('164d3b4b0d09cb05')
-      expect(valid.intrinsics.sampled).to.equal(true)
-      expect(valid.intrinsics.priority).to.equal(0.789)
-      expect(valid.intrinsics.timestamp).to.equal(1563574856827)
+      assert.ok(valid)
+      assert.equal(valid.entryFound, true)
+      assert.equal(valid.entryValid, true)
+      assert.equal(valid.intrinsics.version, 0)
+      assert.equal(valid.intrinsics.parentType, 'App')
+      assert.equal(valid.intrinsics.accountId, '709288')
+      assert.equal(valid.intrinsics.appId, '8599547')
+      assert.equal(valid.intrinsics.spanId, 'f85f42fd82a4cf1d')
+      assert.equal(valid.intrinsics.transactionId, '164d3b4b0d09cb05')
+      assert.equal(valid.intrinsics.sampled, true)
+      assert.equal(valid.intrinsics.priority, 0.789)
+      assert.equal(valid.intrinsics.timestamp, 1563574856827)
     })
 
-    it('should fail mismatched trusted account ID in tracestate header', () => {
+    await t.test('should pass a valid tracestate header if a buffer', (ctx) => {
+      const { agent, traceContext } = ctx.nr
+      agent.config.trusted_account_key = '190'
+      const goodTraceStateHeader =
+        /* eslint-disable-next-line max-len */
+        '190@nr=0-0-709288-8599547-f85f42fd82a4cf1d-164d3b4b0d09cb05-1-0.789-1563574856827,234234@foo=bar'
+      const bufferTraceState = Buffer.from(goodTraceStateHeader, 'utf8')
+      const valid = traceContext._validateAndParseTraceStateHeader(bufferTraceState)
+      assert.ok(valid)
+      assert.equal(valid.entryFound, true)
+      assert.equal(valid.entryValid, true)
+      assert.equal(valid.intrinsics.version, 0)
+      assert.equal(valid.intrinsics.parentType, 'App')
+      assert.equal(valid.intrinsics.accountId, '709288')
+      assert.equal(valid.intrinsics.appId, '8599547')
+      assert.equal(valid.intrinsics.spanId, 'f85f42fd82a4cf1d')
+      assert.equal(valid.intrinsics.transactionId, '164d3b4b0d09cb05')
+      assert.equal(valid.intrinsics.sampled, true)
+      assert.equal(valid.intrinsics.priority, 0.789)
+      assert.equal(valid.intrinsics.timestamp, 1563574856827)
+    })
+
+    await t.test('should fail mismatched trusted account ID in tracestate header', (ctx) => {
+      const { agent, traceContext } = ctx.nr
       agent.config.trusted_account_key = '666'
       const badTraceStateHeader =
         /* eslint-disable-next-line max-len */
         '190@nr=0-0-709288-8599547-f85f42fd82a4cf1d-164d3b4b0d09cb05-1-0.789-1563574856827,234234@foo=bar'
       const valid = traceContext._validateAndParseTraceStateHeader(badTraceStateHeader)
 
-      expect(supportabilitySpy.callCount).to.equal(1)
-      expect(supportabilitySpy.firstCall.args[0]).to.equal('TraceContext/TraceState/NoNrEntry')
-      expect(valid.entryFound).to.be.false
-      expect(valid.entryValid).to.be.undefined
+      assert.equal(supportabilitySpy.callCount, 1)
+      assert.equal(supportabilitySpy.firstCall.args[0], 'TraceContext/TraceState/NoNrEntry')
+      assert.equal(valid.entryFound, false)
+      assert.ok(!valid.entryValid)
     })
 
-    it('should generate supportability metric when vendor list parsing fails', () => {
+    await t.test('should generate supportability metric when vendor list parsing fails', (ctx) => {
+      const { agent, traceContext } = ctx.nr
       agent.config.trusted_account_key = '190'
       const badTraceStateHeader =
         /* eslint-disable-next-line max-len */
         '190@nr=0-0-709288-8599547-f85f42fd82a4cf1d-164d3b4b0d09cb05-1-0.789-1563574856827,234234@foobar'
       const valid = traceContext._validateAndParseTraceStateHeader(badTraceStateHeader)
 
-      expect(supportabilitySpy.callCount).to.equal(1)
-      expect(supportabilitySpy.firstCall.args[0]).to.equal(
+      assert.equal(supportabilitySpy.callCount, 1)
+      assert.equal(
+        supportabilitySpy.firstCall.args[0],
         'TraceContext/TraceState/Parse/Exception/ListMember'
       )
-      expect(valid.traceStateValid).to.be.false
+      assert.equal(valid.traceStateValid, false)
     })
 
-    it('should fail mismatched trusted account ID in tracestate header', () => {
+    await t.test('should fail mismatched trusted account ID in tracestate header', (ctx) => {
+      const { agent, traceContext } = ctx.nr
       agent.config.trusted_account_key = '190'
       const badTimestamp =
         /* eslint-disable-next-line max-len */
         '190@nr=0-0-709288-8599547-f85f42fd82a4cf1d-164d3b4b0d09cb05-1-0.789-,234234@foo=bar'
       const valid = traceContext._validateAndParseTraceStateHeader(badTimestamp)
-      expect(valid.entryFound).to.be.true
-      expect(valid.entryValid).to.be.false
+      assert.equal(valid.entryFound, true)
+      assert.equal(valid.entryValid, false)
     })
 
-    it('should handle empty priority and sampled fields (mobile payload)', () => {
+    await t.test('should handle empty priority and sampled fields (mobile payload)', (ctx) => {
+      const { agent, traceContext } = ctx.nr
       agent.config.trusted_account_key = '190'
       const goodTraceStateHeader =
         /* eslint-disable-next-line max-len */
         '190@nr=0-0-709288-8599547-f85f42fd82a4cf1d-164d3b4b0d09cb05---1563574856827,234234@foo=bar'
       const valid = traceContext._validateAndParseTraceStateHeader(goodTraceStateHeader)
-      expect(valid).to.be.ok
-      expect(valid.entryFound).to.be.true
-      expect(valid.entryValid).to.be.true
-      expect(valid.intrinsics.version).to.equal(0)
-      expect(valid.intrinsics.parentType).to.equal('App')
-      expect(valid.intrinsics.accountId).to.equal('709288')
-      expect(valid.intrinsics.appId).to.equal('8599547')
-      expect(valid.intrinsics.spanId).to.equal('f85f42fd82a4cf1d')
-      expect(valid.intrinsics.transactionId).to.equal('164d3b4b0d09cb05')
-      expect(valid.intrinsics.sampled).to.not.exist
-      expect(valid.intrinsics.priority).to.not.exist
-      expect(valid.intrinsics.timestamp).to.equal(1563574856827)
+      assert.ok(valid)
+      assert.equal(valid.entryFound, true)
+      assert.equal(valid.entryValid, true)
+      assert.equal(valid.intrinsics.version, 0)
+      assert.equal(valid.intrinsics.parentType, 'App')
+      assert.equal(valid.intrinsics.accountId, '709288')
+      assert.equal(valid.intrinsics.appId, '8599547')
+      assert.equal(valid.intrinsics.spanId, 'f85f42fd82a4cf1d')
+      assert.equal(valid.intrinsics.transactionId, '164d3b4b0d09cb05')
+      assert.equal(valid.intrinsics.sampled, null)
+      assert.equal(valid.intrinsics.priority, null)
+      assert.equal(valid.intrinsics.timestamp, 1563574856827)
     })
   })
 
-  describe('header creation', () => {
-    it('creating traceparent twice should give the same value', function () {
+  await t.test('header creation', async (t) => {
+    t.beforeEach(beforeEach)
+    t.afterEach(afterEach)
+    await t.test('creating traceparent twice should give the same value', function (ctx, end) {
+      const { agent } = ctx.nr
       helper.runInTransaction(agent, function (txn) {
         const childSegment = txn.trace.add('child')
         childSegment.start()
@@ -310,12 +372,14 @@ describe('TraceContext', function () {
         const tp1 = txn.traceContext.createTraceparent()
         const tp2 = txn.traceContext.createTraceparent()
 
-        expect(tp1).to.equal(tp2)
+        assert.equal(tp1, tp2)
         txn.end()
+        end()
       })
     })
 
-    it('should create valid headers', () => {
+    await t.test('should create valid headers', (ctx, end) => {
+      const { agent } = ctx.nr
       const trustedKey = '19000'
       const accountId = '190'
       const appId = '109354'
@@ -329,18 +393,20 @@ describe('TraceContext', function () {
         childSegment.start()
 
         const headers = getTraceContextHeaders(txn)
-        expect(txn.traceContext._validateAndParseTraceParentHeader(headers.traceparent)).to.be.ok
-        expect(txn.traceContext._validateAndParseTraceStateHeader(headers.tracestate)).to.be.ok
-        expect(headers.tracestate.split('=')[0]).to.equal(`${trustedKey}@nr`)
-        expect(headers.tracestate.split('-')[6]).to.equal('0')
-        expect(headers.tracestate.split('-')[3]).to.equal(appId)
-        expect(headers.tracestate.split('-')[2]).to.equal(accountId)
+        assert.ok(txn.traceContext._validateAndParseTraceParentHeader(headers.traceparent))
+        assert.ok(txn.traceContext._validateAndParseTraceStateHeader(headers.tracestate))
+        assert.equal(headers.tracestate.split('=')[0], `${trustedKey}@nr`)
+        assert.equal(headers.tracestate.split('-')[6], '0')
+        assert.equal(headers.tracestate.split('-')[3], appId)
+        assert.equal(headers.tracestate.split('-')[2], accountId)
 
         txn.end()
+        end()
       })
     })
 
-    it('should accept first valid nr entry when duplicate entries exist', () => {
+    await t.test('should accept first valid nr entry when duplicate entries exist', (ctx, end) => {
+      const { agent } = ctx.nr
       const acctKey = '190'
       agent.config.trusted_account_key = acctKey
       const duplicateAcctTraceState =
@@ -362,34 +428,40 @@ describe('TraceContext', function () {
         const valid = txn.traceContext._validateAndParseTraceStateHeader(duplicateAcctTraceState)
         const traceContextPayload = getTraceContextHeaders(txn)
 
-        expect(valid.entryFound).to.be.true
-        expect(valid.entryValid).to.be.true
-        expect(valid.vendors.match(`${acctKey}@nr`)).to.not.exist
-
+        assert.equal(valid.entryFound, true)
+        assert.equal(valid.entryValid, true)
+        assert.ok(!valid.vendors.includes(`${acctKey}@nr`))
         const nrMatch = traceContextPayload.tracestate.match(/190@nr/g) || []
-        expect(nrMatch.length, 'has only one nr entry').to.equal(1)
+        assert.equal(nrMatch.length, 1, 'has only one nr entry')
 
         const nonNrMatch = traceContextPayload.tracestate.match(/42@bar/g) || []
-        expect(nonNrMatch.length, 'contains non-nr entry').to.equal(1)
+        assert.equal(nonNrMatch.length, 1, 'contains non-nr entry')
 
         txn.end()
+        end()
       })
     })
 
-    it('should not accept first nr entry when duplicate entries exist and its invalid', () => {
-      const acctKey = '190'
-      agent.config.trusted_account_key = acctKey
-      const duplicateAcctTraceState =
-        /* eslint-disable-next-line max-len */
-        '190@nr=bar,42@bar=foo,190@nr=0-0-709288-8599547-f85f42fd82a4cf1d-164d3b4b0d09cb05-1-0.789-1563574856827'
-      const valid = traceContext._validateAndParseTraceStateHeader(duplicateAcctTraceState)
+    await t.test(
+      'should not accept first nr entry when duplicate entries exist and its invalid',
+      (ctx, end) => {
+        const { agent, traceContext } = ctx.nr
+        const acctKey = '190'
+        agent.config.trusted_account_key = acctKey
+        const duplicateAcctTraceState =
+          /* eslint-disable-next-line max-len */
+          '190@nr=bar,42@bar=foo,190@nr=0-0-709288-8599547-f85f42fd82a4cf1d-164d3b4b0d09cb05-1-0.789-1563574856827'
+        const valid = traceContext._validateAndParseTraceStateHeader(duplicateAcctTraceState)
 
-      expect(valid.entryFound).to.be.true
-      expect(valid.entryValid).to.be.false
-      expect(valid.vendors.match(`${acctKey}@nr`)).to.not.exist
-    })
+        assert.equal(valid.entryFound, true)
+        assert.equal(valid.entryValid, false)
+        assert.ok(!valid.vendors.includes(`${acctKey}@nr`))
+        end()
+      }
+    )
 
-    it('should propogate headers', () => {
+    await t.test('should propagate headers', (ctx, end) => {
+      const { agent } = ctx.nr
       agent.config.distributed_tracing.enabled = true
       agent.config.span_events.enabled = false
 
@@ -406,16 +478,18 @@ describe('TraceContext', function () {
 
         // The parentId (current span id) of traceparent will change, but the traceId
         // should propagate
-        expect(headers.traceparent.startsWith('00-4bf92f3577b34da6a')).to.be.true
+        assert.ok(headers.traceparent.startsWith('00-4bf92f3577b34da6a'))
 
         // The test key/value should propagate at the end of the string
-        expect(headers.tracestate.endsWith(tracestate)).to.be.true
+        assert.ok(headers.tracestate.endsWith(tracestate))
 
         txn.end()
+        end()
       })
     })
 
-    it('should generate parentId if no span/segment in context', (done) => {
+    await t.test('should generate parentId if no span/segment in context', (ctx, end) => {
+      const { agent } = ctx.nr
       // This is a corner case and ideally never happens but is potentially possible
       // due to state loss.
 
@@ -437,20 +511,20 @@ describe('TraceContext', function () {
           const splitData = headers.traceparent.split('-')
           const [version, traceId, parentId] = splitData
 
-          expect(version).to.equal(expectedVersion)
-          expect(traceId).to.equal(expectedTraceId)
+          assert.equal(version, expectedVersion)
+          assert.equal(traceId, expectedTraceId)
 
-          expect(parentId).to.exist // we should generate *something*
-          expect(parentId.length).to.equal(16) // and it should be 16 chars
+          assert.ok(parentId) // we should generate *something*
+          assert.equal(parentId.length, 16) // and it should be 16 chars
 
           txn.end()
-
-          done()
+          end()
         })
       })
     })
 
-    it('should not generate spanId if no span/segment in context', (done) => {
+    await t.test('should not generate spanId if no span/segment in context', (ctx, end) => {
+      const { agent } = ctx.nr
       // This is a corner case and ideally never happens but is potentially possible
       // due to state loss.
 
@@ -471,7 +545,7 @@ describe('TraceContext', function () {
           const tracestate = outboundHeaders.tracestate
 
           // The test key/value should propagate at the end of the string
-          expect(tracestate.endsWith(incomingTraceState)).to.be.true
+          assert.ok(tracestate.endsWith(incomingTraceState))
 
           const secondListMemberIndex = tracestate.indexOf(incomingTraceState)
           const nrItem = tracestate.substring(0, secondListMemberIndex)
@@ -479,16 +553,16 @@ describe('TraceContext', function () {
           const splitData = nrItem.split('-')
           const { 4: spanId } = splitData
 
-          expect(spanId).to.equal('')
+          assert.equal(spanId, '')
 
           txn.end()
-
-          done()
         })
+        end()
       })
     })
 
-    it('should generate new trace when receiving invalid traceparent', (done) => {
+    await t.test('should generate new trace when receiving invalid traceparent', (ctx, end) => {
+      const { agent } = ctx.nr
       agent.config.account_id = 'AccountId1'
       agent.config.distributed_tracing.enabled = true
       agent.config.span_events.enabled = true
@@ -505,17 +579,18 @@ describe('TraceContext', function () {
         const splitData = headers.traceparent.split('-')
         const [version, traceId] = splitData
 
-        expect(version).to.equal('00')
-        expect(traceId).to.exist
-        expect(traceId).to.not.equal(unexpectedTraceId)
+        assert.equal(version, '00')
+        assert.ok(traceId)
+        assert.notEqual(traceId, unexpectedTraceId)
 
         txn.end()
 
-        done()
+        end()
       })
     })
 
-    it('should continue trace when receiving future traceparent version', (done) => {
+    await t.test('should continue trace when receiving future traceparent version', (ctx, end) => {
+      const { agent } = ctx.nr
       agent.config.account_id = 'AccountId1'
       agent.config.distributed_tracing.enabled = true
       agent.config.span_events.enabled = true
@@ -532,16 +607,16 @@ describe('TraceContext', function () {
         const splitData = headers.traceparent.split('-')
         const [version, traceId] = splitData
 
-        expect(version).to.equal('00')
-        expect(traceId).to.equal(expectedTraceId)
+        assert.equal(version, '00')
+        assert.equal(traceId, expectedTraceId)
 
         txn.end()
-
-        done()
+        end()
       })
     })
 
-    it('should not allow extra fields for 00 traceparent version', (done) => {
+    await t.test('should not allow extra fields for 00 traceparent version', (ctx, end) => {
+      const { agent } = ctx.nr
       agent.config.account_id = 'AccountId1'
       agent.config.distributed_tracing.enabled = true
       agent.config.span_events.enabled = true
@@ -558,16 +633,16 @@ describe('TraceContext', function () {
         const splitData = headers.traceparent.split('-')
         const [version, traceId] = splitData
 
-        expect(version).to.equal('00')
-        expect(traceId).to.not.equal(unexpectedTraceId)
+        assert.equal(version, '00')
+        assert.notEqual(traceId, unexpectedTraceId)
 
         txn.end()
-
-        done()
+        end()
       })
     })
 
-    it('should handle combined headers with empty values', (done) => {
+    await t.test('should handle combined headers with empty values', (ctx, end) => {
+      const { agent } = ctx.nr
       // The http module will automatically combine headers
       // In the case of combining ['tracestate', ''] and ['tracestate', 'foo=1']
       // An incoming header may look like tracestate: 'foo=1, '.
@@ -587,353 +662,362 @@ describe('TraceContext', function () {
         const splitData = headers.traceparent.split('-')
         const [, traceId] = splitData
 
-        expect(traceId).to.equal(expectedTraceId)
+        assert.equal(traceId, expectedTraceId)
 
         const tracestate = headers.tracestate
         const listMembers = tracestate.split(',')
 
         const [, fooMember] = listMembers
 
-        expect(fooMember).to.equal('foo=1')
+        assert.equal(fooMember, 'foo=1')
 
         txn.end()
-
-        done()
+        end()
       })
     })
 
-    it('should propogate existing list members when cannot accept newrelic list members', (done) => {
-      // missing trust key means can't accept/match newrelic header
-      agent.config.trusted_account_key = null
-      agent.config.distributed_tracing.enabled = true
-      agent.config.span_events.enabled = false
-
-      const incomingTraceparent = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00'
-      const incomingTracestate =
-        '33@nr=0-0-33-2827902-7d3efb1b173fecfa-e8b91a159289ff74-1-1.23456-1518469636035,test=test'
-
-      helper.runInTransaction(agent, function (txn) {
-        const childSegment = txn.trace.add('child')
-        childSegment.start()
-
-        txn.acceptTraceContextPayload(incomingTraceparent, incomingTracestate)
-
-        expect(supportabilitySpy.callCount).to.equal(1)
-
-        // eslint-disable-next-line max-len
-        expect(supportabilitySpy.firstCall.args[0]).to.equal(
-          'TraceContext/TraceState/Accept/Exception'
-        )
-
-        const headers = getTraceContextHeaders(txn)
-        // The parentId (current span id) of traceparent will change, but the traceId
-        // should propagate
-        expect(headers.traceparent.startsWith('00-4bf92f3577b34da6a')).to.be.true
-
-        // The original tracestate should be propogated
-        expect(headers.tracestate).to.equal(incomingTracestate)
-
-        txn.end()
-
-        done()
-      })
-    })
-
-    it('should propogate existing when cannot accept or generate newrelic list member', (done) => {
-      agent.config.trusted_account_key = null
-      agent.config.account_id = null
-      agent.config.distributed_tracing.enabled = true
-      agent.config.span_events.enabled = false
-
-      const incomingTraceparent = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00'
-      const incomingTracestate =
-        '33@nr=0-0-33-2827902-7d3efb1b173fecfa-e8b91a159289ff74-1-1.23456-1518469636035,test=test'
-
-      helper.runInTransaction(agent, function (txn) {
-        const childSegment = txn.trace.add('child')
-        childSegment.start()
-
-        txn.acceptTraceContextPayload(incomingTraceparent, incomingTracestate)
-
-        const headers = getTraceContextHeaders(txn)
-        // The parentId (current span id) of traceparent will change, but the traceId
-        // should propagate
-        expect(headers.traceparent.startsWith('00-4bf92f3577b34da6a')).to.be.true
-
-        // The original tracestate should be propogated
-        expect(headers.tracestate).to.equal(incomingTracestate)
-
-        txn.end()
-
-        done()
-      })
-    })
-
-    describe('traceparent parsing should accept and remove optional white space (OWS)', () => {
-      it('should handle leading white space', (done) => {
-        agent.config.account_id = 'AccountId1'
-        agent.config.distributed_tracing.enabled = true
-        agent.config.span_events.enabled = true
-
-        const expectedTraceId = '12345678901234567890123456789012'
-        const futureTraceparent = ` 00-${expectedTraceId}-1234567890123456-01`
-        const incomingTraceState = 'test=test'
-
-        helper.runInTransaction(agent, function (txn) {
-          txn.acceptTraceContextPayload(futureTraceparent, incomingTraceState)
-
-          const headers = getTraceContextHeaders(txn)
-          const splitData = headers.traceparent.split('-')
-          const [, traceId] = splitData
-
-          expect(traceId).to.equal(expectedTraceId)
-
-          txn.end()
-
-          done()
-        })
-      })
-
-      it('should handle leading tab', (done) => {
-        agent.config.account_id = 'AccountId1'
-        agent.config.distributed_tracing.enabled = true
-        agent.config.span_events.enabled = true
-
-        const expectedTraceId = '12345678901234567890123456789012'
-        const futureTraceparent = `\t00-${expectedTraceId}-1234567890123456-01`
-        const incomingTraceState = 'test=test'
-
-        helper.runInTransaction(agent, function (txn) {
-          txn.acceptTraceContextPayload(futureTraceparent, incomingTraceState)
-
-          const headers = getTraceContextHeaders(txn)
-          const splitData = headers.traceparent.split('-')
-          const [, traceId] = splitData
-
-          expect(traceId).to.equal(expectedTraceId)
-
-          txn.end()
-
-          done()
-        })
-      })
-
-      it('should handle trailing white space', (done) => {
-        agent.config.account_id = 'AccountId1'
-        agent.config.distributed_tracing.enabled = true
-        agent.config.span_events.enabled = true
-
-        const expectedTraceId = '12345678901234567890123456789012'
-        const futureTraceparent = `00-${expectedTraceId}-1234567890123456-01 `
-        const incomingTraceState = 'test=test'
-
-        helper.runInTransaction(agent, function (txn) {
-          txn.acceptTraceContextPayload(futureTraceparent, incomingTraceState)
-
-          const headers = getTraceContextHeaders(txn)
-          const splitData = headers.traceparent.split('-')
-          const [, traceId] = splitData
-
-          expect(traceId).to.equal(expectedTraceId)
-
-          txn.end()
-
-          done()
-        })
-      })
-    })
-
-    describe('tracestate parsing should accept and remove optional white space (OWS)', () => {
-      it('should handle white space and tabs for a single item', (done) => {
-        agent.config.account_id = 'AccountId1'
-        agent.config.distributed_tracing.enabled = true
-        agent.config.span_events.enabled = true
-
-        const expectedTraceId = '12345678901234567890123456789012'
-        const futureTraceparent = `00-${expectedTraceId}-1234567890123456-01`
-        const incomingTraceState = '\t foo=1 \t'
-
-        helper.runInTransaction(agent, function (txn) {
-          txn.acceptTraceContextPayload(futureTraceparent, incomingTraceState)
-
-          const headers = getTraceContextHeaders(txn)
-          const splitData = headers.traceparent.split('-')
-          const [, traceId] = splitData
-
-          expect(traceId).to.equal(expectedTraceId)
-
-          const tracestate = headers.tracestate
-          const listMembers = tracestate.split(',')
-
-          const [, fooMember] = listMembers
-          expect(fooMember).to.equal('foo=1')
-
-          txn.end()
-
-          done()
-        })
-      })
-
-      it('should handle white space and tabs between list members', (done) => {
-        agent.config.account_id = 'AccountId1'
-        agent.config.distributed_tracing.enabled = true
-        agent.config.span_events.enabled = true
-
-        const expectedTraceId = '12345678901234567890123456789012'
-        const futureTraceparent = `00-${expectedTraceId}-1234567890123456-01`
-        const incomingTraceState = 'foo=1 \t , \t bar=2, \t baz=3'
-
-        helper.runInTransaction(agent, function (txn) {
-          txn.acceptTraceContextPayload(futureTraceparent, incomingTraceState)
-
-          const headers = getTraceContextHeaders(txn)
-          const splitData = headers.traceparent.split('-')
-          const [, traceId] = splitData
-
-          expect(traceId).to.equal(expectedTraceId)
-
-          const tracestate = headers.tracestate
-          const listMembers = tracestate.split(',')
-
-          const [, fooMember, barMember, bazMember] = listMembers
-
-          expect(fooMember).to.equal('foo=1')
-          expect(barMember).to.equal('bar=2')
-          expect(bazMember).to.equal('baz=3')
-
-          txn.end()
-
-          done()
-        })
-      })
-
-      it('should handle trailing tab', (done) => {
-        agent.config.account_id = 'AccountId1'
-        agent.config.distributed_tracing.enabled = true
-        agent.config.span_events.enabled = true
-
-        const expectedTraceId = '12345678901234567890123456789012'
-        const futureTraceparent = `00-${expectedTraceId}-1234567890123456-01\t`
-        const incomingTraceState = 'test=test'
-
-        helper.runInTransaction(agent, function (txn) {
-          txn.acceptTraceContextPayload(futureTraceparent, incomingTraceState)
-
-          const headers = getTraceContextHeaders(txn)
-          const splitData = headers.traceparent.split('-')
-          const [, traceId] = splitData
-
-          expect(traceId).to.equal(expectedTraceId)
-
-          txn.end()
-
-          done()
-        })
-      })
-
-      it('should handle leading and trailing white space and tabs', (done) => {
-        agent.config.account_id = 'AccountId1'
-        agent.config.distributed_tracing.enabled = true
-        agent.config.span_events.enabled = true
-
-        const expectedTraceId = '12345678901234567890123456789012'
-        const futureTraceparent = `\t 00-${expectedTraceId}-1234567890123456-01 \t`
-        const incomingTraceState = 'test=test'
-
-        helper.runInTransaction(agent, function (txn) {
-          txn.acceptTraceContextPayload(futureTraceparent, incomingTraceState)
-
-          const headers = getTraceContextHeaders(txn)
-          const splitData = headers.traceparent.split('-')
-          const [, traceId] = splitData
-
-          expect(traceId).to.equal(expectedTraceId)
-
-          txn.end()
-
-          done()
-        })
-      })
-    })
-
-    describe('should gracefully handle missing required tracestate fields', () => {
-      // During startup, there is a period of time where we may notice outbound
-      // requests (or via API call) and attempt to create traces before receiving
-      // required fields from server.
-
-      it('should not create tracestate when accountId is missing', (done) => {
-        agent.config.account_id = null
-        agent.config.distributed_tracing.enabled = true
-        agent.config.span_events.enabled = true
-
-        helper.runInTransaction(agent, function (txn) {
-          const headers = {}
-          txn.traceContext.addTraceContextHeaders(headers)
-
-          expect(headers).to.have.property('traceparent')
-          expect(headers).to.not.have.property('tracestate')
-
-          expect(supportabilitySpy.callCount).to.equal(2)
-          // eslint-disable-next-line max-len
-          expect(supportabilitySpy.firstCall.args[0]).to.equal(
-            'TraceContext/TraceState/Create/Exception'
-          )
-
-          txn.end()
-
-          done()
-        })
-      })
-
-      it('should not create tracestate when primary_application_id missing', (done) => {
-        agent.config.account_id = '12345'
-        agent.config.primary_application_id = null
-        agent.config.distributed_tracing.enabled = true
-        agent.config.span_events.enabled = true
-
-        helper.runInTransaction(agent, function (txn) {
-          const headers = {}
-          txn.traceContext.addTraceContextHeaders(headers)
-
-          expect(headers).to.have.property('traceparent')
-          expect(headers).to.not.have.property('tracestate')
-
-          expect(supportabilitySpy.callCount).to.equal(2)
-          // eslint-disable-next-line max-len
-          expect(supportabilitySpy.firstCall.args[0]).to.equal(
-            'TraceContext/TraceState/Create/Exception'
-          )
-
-          txn.end()
-
-          done()
-        })
-      })
-
-      it('should not create tracestate when trusted_account_key missing', (done) => {
-        agent.config.account_id = '12345'
-        agent.config.primary_application_id = 'appId'
+    await t.test(
+      'should propogate existing list members when cannot accept newrelic list members',
+      (ctx, end) => {
+        const { agent } = ctx.nr
+        // missing trust key means can't accept/match newrelic header
         agent.config.trusted_account_key = null
         agent.config.distributed_tracing.enabled = true
-        agent.config.span_events.enabled = true
+        agent.config.span_events.enabled = false
+
+        const incomingTraceparent = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00'
+        const incomingTracestate =
+          '33@nr=0-0-33-2827902-7d3efb1b173fecfa-e8b91a159289ff74-1-1.23456-1518469636035,test=test'
 
         helper.runInTransaction(agent, function (txn) {
-          const headers = {}
-          txn.traceContext.addTraceContextHeaders(headers)
+          const childSegment = txn.trace.add('child')
+          childSegment.start()
 
-          expect(headers).to.have.property('traceparent')
-          expect(headers).to.not.have.property('tracestate')
+          txn.acceptTraceContextPayload(incomingTraceparent, incomingTracestate)
 
-          expect(supportabilitySpy.callCount).to.equal(2)
+          assert.equal(supportabilitySpy.callCount, 1)
+
           // eslint-disable-next-line max-len
-          expect(supportabilitySpy.firstCall.args[0]).to.equal(
-            'TraceContext/TraceState/Create/Exception'
+          assert.equal(
+            supportabilitySpy.firstCall.args[0],
+            'TraceContext/TraceState/Accept/Exception'
           )
+
+          const headers = getTraceContextHeaders(txn)
+          // The parentId (current span id) of traceparent will change, but the traceId
+          // should propagate
+          assert.ok(headers.traceparent.startsWith('00-4bf92f3577b34da6a'))
+
+          // The original tracestate should be propogated
+          assert.equal(headers.tracestate, incomingTracestate)
 
           txn.end()
 
-          done()
+          end()
         })
+      }
+    )
+
+    await t.test(
+      'should propogate existing when cannot accept or generate newrelic list member',
+      (ctx, end) => {
+        const { agent } = ctx.nr
+        agent.config.trusted_account_key = null
+        agent.config.account_id = null
+        agent.config.distributed_tracing.enabled = true
+        agent.config.span_events.enabled = false
+
+        const incomingTraceparent = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00'
+        const incomingTracestate =
+          '33@nr=0-0-33-2827902-7d3efb1b173fecfa-e8b91a159289ff74-1-1.23456-1518469636035,test=test'
+
+        helper.runInTransaction(agent, function (txn) {
+          const childSegment = txn.trace.add('child')
+          childSegment.start()
+
+          txn.acceptTraceContextPayload(incomingTraceparent, incomingTracestate)
+
+          const headers = getTraceContextHeaders(txn)
+          // The parentId (current span id) of traceparent will change, but the traceId
+          // should propagate
+          assert.ok(headers.traceparent.startsWith('00-4bf92f3577b34da6a'))
+
+          // The original tracestate should be propogated
+          assert.equal(headers.tracestate, incomingTracestate)
+
+          txn.end()
+          end()
+        })
+      }
+    )
+
+    await t.test('should handle leading white space', (ctx, end) => {
+      const { agent } = ctx.nr
+      agent.config.account_id = 'AccountId1'
+      agent.config.distributed_tracing.enabled = true
+      agent.config.span_events.enabled = true
+
+      const expectedTraceId = '12345678901234567890123456789012'
+      const futureTraceparent = ` 00-${expectedTraceId}-1234567890123456-01`
+      const incomingTraceState = 'test=test'
+
+      helper.runInTransaction(agent, function (txn) {
+        txn.acceptTraceContextPayload(futureTraceparent, incomingTraceState)
+
+        const headers = getTraceContextHeaders(txn)
+        const splitData = headers.traceparent.split('-')
+        const [, traceId] = splitData
+
+        assert.equal(traceId, expectedTraceId)
+
+        txn.end()
+        end()
+      })
+    })
+
+    await t.test('should handle leading tab', (ctx, end) => {
+      const { agent } = ctx.nr
+      agent.config.account_id = 'AccountId1'
+      agent.config.distributed_tracing.enabled = true
+      agent.config.span_events.enabled = true
+
+      const expectedTraceId = '12345678901234567890123456789012'
+      const futureTraceparent = `\t00-${expectedTraceId}-1234567890123456-01`
+      const incomingTraceState = 'test=test'
+
+      helper.runInTransaction(agent, function (txn) {
+        txn.acceptTraceContextPayload(futureTraceparent, incomingTraceState)
+
+        const headers = getTraceContextHeaders(txn)
+        const splitData = headers.traceparent.split('-')
+        const [, traceId] = splitData
+
+        assert.equal(traceId, expectedTraceId)
+
+        txn.end()
+        end()
+      })
+    })
+
+    await t.test('should handle trailing white space', (ctx, end) => {
+      const { agent } = ctx.nr
+      agent.config.account_id = 'AccountId1'
+      agent.config.distributed_tracing.enabled = true
+      agent.config.span_events.enabled = true
+
+      const expectedTraceId = '12345678901234567890123456789012'
+      const futureTraceparent = `00-${expectedTraceId}-1234567890123456-01 `
+      const incomingTraceState = 'test=test'
+
+      helper.runInTransaction(agent, function (txn) {
+        txn.acceptTraceContextPayload(futureTraceparent, incomingTraceState)
+
+        const headers = getTraceContextHeaders(txn)
+        const splitData = headers.traceparent.split('-')
+        const [, traceId] = splitData
+
+        assert.equal(traceId, expectedTraceId)
+
+        txn.end()
+        end()
+      })
+    })
+
+    await t.test('should handle white space and tabs for a single item', (ctx, end) => {
+      const { agent } = ctx.nr
+      agent.config.account_id = 'AccountId1'
+      agent.config.distributed_tracing.enabled = true
+      agent.config.span_events.enabled = true
+
+      const expectedTraceId = '12345678901234567890123456789012'
+      const futureTraceparent = `00-${expectedTraceId}-1234567890123456-01`
+      const incomingTraceState = '\t foo=1 \t'
+
+      helper.runInTransaction(agent, function (txn) {
+        txn.acceptTraceContextPayload(futureTraceparent, incomingTraceState)
+
+        const headers = getTraceContextHeaders(txn)
+        const splitData = headers.traceparent.split('-')
+        const [, traceId] = splitData
+
+        assert.equal(traceId, expectedTraceId)
+
+        const tracestate = headers.tracestate
+        const listMembers = tracestate.split(',')
+
+        const [, fooMember] = listMembers
+        assert.equal(fooMember, 'foo=1')
+
+        txn.end()
+        end()
+      })
+    })
+
+    await t.test('should handle white space and tabs between list members', (ctx, end) => {
+      const { agent } = ctx.nr
+      agent.config.account_id = 'AccountId1'
+      agent.config.distributed_tracing.enabled = true
+      agent.config.span_events.enabled = true
+
+      const expectedTraceId = '12345678901234567890123456789012'
+      const futureTraceparent = `00-${expectedTraceId}-1234567890123456-01`
+      const incomingTraceState = 'foo=1 \t , \t bar=2, \t baz=3'
+
+      helper.runInTransaction(agent, function (txn) {
+        txn.acceptTraceContextPayload(futureTraceparent, incomingTraceState)
+
+        const headers = getTraceContextHeaders(txn)
+        const splitData = headers.traceparent.split('-')
+        const [, traceId] = splitData
+
+        assert.equal(traceId, expectedTraceId)
+
+        const tracestate = headers.tracestate
+        const listMembers = tracestate.split(',')
+
+        const [, fooMember, barMember, bazMember] = listMembers
+
+        assert.equal(fooMember, 'foo=1')
+        assert.equal(barMember, 'bar=2')
+        assert.equal(bazMember, 'baz=3')
+
+        txn.end()
+        end()
+      })
+    })
+
+    await t.test('should handle trailing tab', (ctx, end) => {
+      const { agent } = ctx.nr
+      agent.config.account_id = 'AccountId1'
+      agent.config.distributed_tracing.enabled = true
+      agent.config.span_events.enabled = true
+
+      const expectedTraceId = '12345678901234567890123456789012'
+      const futureTraceparent = `00-${expectedTraceId}-1234567890123456-01\t`
+      const incomingTraceState = 'test=test'
+
+      helper.runInTransaction(agent, function (txn) {
+        txn.acceptTraceContextPayload(futureTraceparent, incomingTraceState)
+
+        const headers = getTraceContextHeaders(txn)
+        const splitData = headers.traceparent.split('-')
+        const [, traceId] = splitData
+
+        assert.equal(traceId, expectedTraceId)
+
+        txn.end()
+        end()
+      })
+    })
+
+    await t.test('should handle leading and trailing white space and tabs', (ctx, end) => {
+      const { agent } = ctx.nr
+      agent.config.account_id = 'AccountId1'
+      agent.config.distributed_tracing.enabled = true
+      agent.config.span_events.enabled = true
+
+      const expectedTraceId = '12345678901234567890123456789012'
+      const futureTraceparent = `\t 00-${expectedTraceId}-1234567890123456-01 \t`
+      const incomingTraceState = 'test=test'
+
+      helper.runInTransaction(agent, function (txn) {
+        txn.acceptTraceContextPayload(futureTraceparent, incomingTraceState)
+
+        const headers = getTraceContextHeaders(txn)
+        const splitData = headers.traceparent.split('-')
+        const [, traceId] = splitData
+
+        assert.equal(traceId, expectedTraceId)
+
+        txn.end()
+        end()
+      })
+    })
+  })
+
+  await t.test('should gracefully handle missing required tracestate fields', async (t) => {
+    t.beforeEach(beforeEach)
+    t.afterEach(afterEach)
+    // During startup, there is a period of time where we may notice outbound
+    // requests (or via API call) and attempt to create traces before receiving
+    // required fields from server.
+
+    await t.test('should not create tracestate when accountId is missing', (ctx, end) => {
+      const { agent } = ctx.nr
+      agent.config.account_id = null
+      agent.config.distributed_tracing.enabled = true
+      agent.config.span_events.enabled = true
+
+      helper.runInTransaction(agent, function (txn) {
+        const headers = {}
+        txn.traceContext.addTraceContextHeaders(headers)
+
+        assert.ok(headers.traceparent)
+        assert.ok(!headers.tracestate)
+
+        assert.equal(supportabilitySpy.callCount, 2)
+        // eslint-disable-next-line max-len
+        assert.equal(
+          supportabilitySpy.firstCall.args[0],
+          'TraceContext/TraceState/Create/Exception'
+        )
+
+        txn.end()
+        end()
+      })
+    })
+
+    await t.test('should not create tracestate when primary_application_id missing', (ctx, end) => {
+      const { agent } = ctx.nr
+      agent.config.account_id = '12345'
+      agent.config.primary_application_id = null
+      agent.config.distributed_tracing.enabled = true
+      agent.config.span_events.enabled = true
+
+      helper.runInTransaction(agent, function (txn) {
+        const headers = {}
+        txn.traceContext.addTraceContextHeaders(headers)
+
+        assert.ok(headers.traceparent)
+        assert.ok(!headers.tracestate)
+
+        assert.equal(supportabilitySpy.callCount, 2)
+        // eslint-disable-next-line max-len
+        assert.equal(
+          supportabilitySpy.firstCall.args[0],
+          'TraceContext/TraceState/Create/Exception'
+        )
+
+        txn.end()
+        end()
+      })
+    })
+
+    await t.test('should not create tracestate when trusted_account_key missing', (ctx, end) => {
+      const { agent } = ctx.nr
+      agent.config.account_id = '12345'
+      agent.config.primary_application_id = 'appId'
+      agent.config.trusted_account_key = null
+      agent.config.distributed_tracing.enabled = true
+      agent.config.span_events.enabled = true
+
+      helper.runInTransaction(agent, function (txn) {
+        const headers = {}
+        txn.traceContext.addTraceContextHeaders(headers)
+
+        assert.ok(headers.traceparent)
+        assert.ok(!headers.tracestate)
+
+        assert.equal(supportabilitySpy.callCount, 2)
+        // eslint-disable-next-line max-len
+        assert.equal(
+          supportabilitySpy.firstCall.args[0],
+          'TraceContext/TraceState/Create/Exception'
+        )
+
+        txn.end()
+
+        end()
       })
     })
   })

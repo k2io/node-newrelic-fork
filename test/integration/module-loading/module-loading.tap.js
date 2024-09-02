@@ -13,6 +13,8 @@ const shimmer = require('../../../lib/shimmer')
 const symbols = require('../../../lib/symbols')
 const { FEATURES } = require('../../../lib/metrics/names')
 
+const LOCAL_MODULE = 'local-package'
+const LOCAL_MODULE_PATH = require.resolve('./local-package')
 const CUSTOM_MODULE = 'customTestPackage'
 const CUSTOM_MODULE_PATH = `./node_modules/${CUSTOM_MODULE}`
 const CUSTOM_MODULE_PATH_SUB = `./node_modules/subPkg/node_modules/${CUSTOM_MODULE}`
@@ -67,8 +69,14 @@ tap.test('should instrument multiple versions of the same package', function (t)
   const pkg2 = require(CUSTOM_MODULE_PATH_SUB)
   t.ok(pkg1[symbols.shim], 'should wrap first package')
   t.ok(pkg2[symbols.shim], 'should wrap sub package of same name, different version')
-  t.ok(instrumentation[symbols.instrumented].has('3.0.0'))
-  t.ok(instrumentation[symbols.instrumented].has('1.0.0'))
+
+  const trackedItems = shimmer.registeredInstrumentations.getAllByName(CUSTOM_MODULE)
+  t.equal(trackedItems.length, 2)
+  t.equal(trackedItems[0].instrumentation.resolvedName.includes(CUSTOM_MODULE_PATH.slice(1)), true)
+  t.equal(
+    trackedItems[1].instrumentation.resolvedName.includes(CUSTOM_MODULE_PATH_SUB.slice(1)),
+    true
+  )
 })
 
 tap.test('should only log supportability metric for tracking type instrumentation', function (t) {
@@ -90,7 +98,9 @@ tap.test('should only log supportability metric for tracking type instrumentatio
   t.equal(knexOnRequiredMetric.callCount, 1, `should record ${PKG}`)
   const knexVersionMetric = agent.metrics._metrics.unscoped[PKG_VERSION]
   t.equal(knexVersionMetric.callCount, 1, `should record ${PKG_VERSION}`)
-  t.ok(shimmer.isInstrumented('knex'), 'should mark tracking modules as instrumented')
+  // eslint-disable-next-line node/no-extraneous-require
+  const modPath = path.dirname(require.resolve('knex'))
+  t.ok(shimmer.isInstrumented('knex', modPath), 'should mark tracking modules as instrumented')
   t.end()
 })
 
@@ -173,6 +183,58 @@ tap.test('Should create usage version metric onRequire', (t) => {
     t.ok(onRequireMetric)
     t.equal(onRequireMetric.callCount, 1)
 
+    t.end()
+  }
+})
+
+tap.test('Should create usage metric onRequire for built-in', (t) => {
+  const domainMetric = `${FEATURES.INSTRUMENTATION.ON_REQUIRE}/domain`
+  let agent = helper.instrumentMockedAgent()
+
+  t.teardown(() => {
+    helper.unloadAgent(agent)
+    agent = null
+  })
+
+  // eslint-disable-next-line node/no-deprecated-api
+  require('domain')
+
+  const onRequireMetric = agent.metrics._metrics.unscoped[domainMetric]
+
+  t.ok(onRequireMetric)
+  t.equal(onRequireMetric.callCount, 1)
+  const domainMetrics = Object.keys(agent.metrics._metrics.unscoped)
+  t.equal(domainMetrics.length, 1, 'should not log a version metric for a built-in')
+
+  t.end()
+})
+
+tap.test('should instrument a local package', (t) => {
+  let agent = helper.instrumentMockedAgent()
+
+  t.teardown(() => {
+    helper.unloadAgent(agent)
+    agent = null
+  })
+
+  shimmer.registerInstrumentation({
+    moduleName: LOCAL_MODULE,
+    absolutePath: LOCAL_MODULE_PATH,
+    onRequire: onRequireHandler
+  })
+
+  require('./local-package')
+
+  function onRequireHandler(shim, localPkg, name) {
+    t.equal(
+      shim.pkgVersion,
+      process.version,
+      'defaults to node version for pkgVersion as this is not a package'
+    )
+    t.ok(shim.id)
+    t.equal(name, LOCAL_MODULE)
+    const result = localPkg()
+    t.same(result, { hello: 'world' })
     t.end()
   }
 })
