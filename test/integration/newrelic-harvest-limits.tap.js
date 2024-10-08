@@ -54,6 +54,9 @@ tap.test('Connect calls re-generate harvest limits from original config values',
       host: TEST_DOMAIN,
       application_logging: {
         enabled: true
+      },
+      utilization: {
+        detect_aws: false
       }
     })
   })
@@ -87,7 +90,7 @@ tap.test('Connect calls re-generate harvest limits from original config values',
       serverHarvest.event_harvest_config,
       'config should have been updated from server'
     )
-    agent.metrics.once('finished metric_data data send.', function onMetricsFinished() {
+    agent.metrics.once('finished_data_send-metric_data', function onMetricsFinished() {
       const connectCalls = agent.collector._connect.args
       t.same(
         config.event_harvest_config,

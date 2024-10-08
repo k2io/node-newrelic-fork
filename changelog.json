@@ -2,6 +2,145 @@
   "repository": "newrelic/node-newrelic",
   "entries": [
     {
+      "version": "12.5.1",
+      "changes": {
+        "security": [],
+        "bugfixes": [
+          "Fixed handling of Pino merging object"
+        ],
+        "features": []
+      }
+    },
+    {
+      "version": "12.5.0",
+      "changes": {
+        "security": [],
+        "bugfixes": [
+          "Ensured README displays for Azure site extension"
+        ],
+        "features": [
+          "Added utilization info for ECS"
+        ]
+      }
+    },
+    {
+      "version": "12.4.0",
+      "changes": {
+        "security": [],
+        "bugfixes": [],
+        "features": [
+          "Provided ability to disable instrumentation for a 3rd party package",
+          "Added support for `express@5`"
+        ]
+      }
+    },
+    {
+      "version": "12.3.1",
+      "changes": {
+        "security": [],
+        "bugfixes": [
+          "Fixed detection of REST API type payloads in AWS Lambda"
+        ],
+        "features": []
+      }
+    },
+    {
+      "version": "12.3.0",
+      "changes": {
+        "security": [],
+        "bugfixes": [
+          "Improved AWS Lambda event detection"
+        ],
+        "features": [
+          "Added new API method `withLlmCustomAttributes` to run a function in a LLM context"
+        ]
+      }
+    },
+    {
+      "version": "12.2.0",
+      "changes": {
+        "security": [],
+        "bugfixes": [
+          "Updated `koa` instrumentation to properly get the matched route name and to handle changes in `@koa/router@13.0.0`"
+        ],
+        "features": [
+          "Added instrumentation support for Express 5 beta"
+        ]
+      }
+    },
+    {
+      "version": "12.1.1",
+      "changes": {
+        "security": [],
+        "bugfixes": [
+          "Updated `amqplib` instrumentation to properly parse host/port from connect",
+          "Updated `redis` instrumentation to parse host/port when a url is not provided",
+          "Updated the `kafkajs` node metrics to remove `/Named` from the name"
+        ],
+        "features": []
+      }
+    },
+    {
+      "version": "12.1.0",
+      "changes": {
+        "security": [],
+        "bugfixes": [
+          "Pick log message from merging object in Pino instrumentation",
+          "Added TLS verification for Redis"
+        ],
+        "features": []
+      }
+    },
+    {
+      "version": "12.0.0",
+      "changes": {
+        "security": [],
+        "bugfixes": [],
+        "features": [
+          "Added `server.address` to amqplib spans",
+          "Removed support for `redis` < 2.6.0",
+          "Removed legacy context manager",
+          "Removed instrumentation for `director`",
+          "Updated `mongodb` instrumentation to drop support for versions 2 and 3",
+          "Dropped support for Node.js 16",
+          "Migrated instrumentation for `next` into agent"
+        ]
+      }
+    },
+    {
+      "version": "11.23.2",
+      "changes": {
+        "security": [],
+        "bugfixes": [
+          "Updated aws-sdk v3 instrumentation to load custom middleware last to properly get the external http span to add `aws.*` attributes",
+          "Updated cassandra-driver instrumentation to properly trace promise based executions"
+        ],
+        "features": [
+          "Added support for `fs.glob` in Node 22+"
+        ]
+      }
+    },
+    {
+      "version": "11.23.1",
+      "changes": {
+        "security": [],
+        "bugfixes": [
+          "Updated redis v4 instrumentation to work with transactions(multi/exec)"
+        ],
+        "features": []
+      }
+    },
+    {
+      "version": "11.23.0",
+      "changes": {
+        "security": [],
+        "bugfixes": [],
+        "features": [
+          "Added support for account level governance of AI Monitoring"
+        ]
+      }
+    },
+    {
       "version": "11.22.0",
       "changes": {
         "security": [],

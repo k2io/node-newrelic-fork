@@ -48,7 +48,7 @@ function assertMetrics(metrics, expected, exclusive, assertValues) {
   for (let i = 0, len = expected.length; i < len; i++) {
     const expectedMetric = expected[i]
     const metric = metrics.getMetric(expectedMetric[0].name, expectedMetric[0].scope)
-    this.ok(metric)
+    this.ok(metric, `should find ${expectedMetric[0].name}`)
     if (assertValues) {
       this.same(metric.toJSON(), expectedMetric[1])
     }
@@ -161,7 +161,6 @@ function assertSegments(parent, expected, options) {
         // If the next expected item is not array, then check that the current
         // child has no children
         if (!Array.isArray(expected[i + 1])) {
-          // var children = child.children
           this.ok(
             getChildren(child).length === 0,
             'segment "' + child.name + '" should not have any children'

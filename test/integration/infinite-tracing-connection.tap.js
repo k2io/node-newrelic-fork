@@ -276,8 +276,6 @@ const infiniteTracingService = grpc.loadPackageDefinition(packageDefinition).com
           server = createGrpcServer(sslOpts, services, (err, port) => {
             t.error(err)
 
-            server.start()
-
             agent = helper.loadMockedAgent({
               license_key: EXPECTED_LICENSE_KEY,
               apdex_t: Number.MIN_VALUE, // force transaction traces
@@ -291,6 +289,9 @@ const infiniteTracingService = grpc.loadPackageDefinition(packageDefinition).com
               transaction_tracer: {
                 record_sql: 'obfuscated',
                 explain_threshold: Number.MIN_VALUE // force SQL traces
+              },
+              utilization: {
+                detect_aws: false
               },
               infinite_tracing: {
                 ...config,
